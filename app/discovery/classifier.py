@@ -13,7 +13,17 @@ _HLS_CONTENT_TYPES = {
 }
 
 _VIDEO_CONTENT_PREFIXES = ("video/",)
-_MEDIA_EXTENSIONS = {".ts", ".mp4", ".m4v", ".mkv", ".webm", ".flv", ".aac", ".mp3", ".ac3"}
+_MEDIA_EXTENSIONS = {
+    ".ts",
+    ".mp4",
+    ".m4v",
+    ".mkv",
+    ".webm",
+    ".flv",
+    ".aac",
+    ".mp3",
+    ".ac3",
+}
 
 
 def _content_type(value: str | None) -> str | None:
@@ -35,15 +45,25 @@ def classify_response(url: str, content_type: str | None, body: bytes) -> Stream
     if stripped.startswith("#EXTM3U"):
         if "#EXT-X-STREAM-INF" in stripped:
             return StreamKind.MASTER_PLAYLIST
-        if any(tag in stripped for tag in ("#EXTINF", "#EXT-X-TARGETDURATION", "#EXT-X-MEDIA-SEQUENCE")):
+        playlist_tags = (
+            "#EXTINF",
+            "#EXT-X-TARGETDURATION",
+            "#EXT-X-MEDIA-SEQUENCE",
+        )
+        if any(tag in stripped for tag in playlist_tags):
             return StreamKind.MEDIA_PLAYLIST
-        if is_hls_content_type(normalized_type) or url.lower().split("?", 1)[0].endswith((".m3u8", ".m3u")):
+        m3u_suffixes = (".m3u8", ".m3u")
+        if is_hls_content_type(normalized_type) or url.lower().split("?", 1)[0].endswith(
+            m3u_suffixes
+        ):
             return StreamKind.MEDIA_PLAYLIST
 
     if is_hls_content_type(normalized_type):
         return StreamKind.MEDIA_PLAYLIST
 
-    if normalized_type and any(normalized_type.startswith(prefix) for prefix in _VIDEO_CONTENT_PREFIXES):
+    if normalized_type and any(
+        normalized_type.startswith(prefix) for prefix in _VIDEO_CONTENT_PREFIXES
+    ):
         return StreamKind.MEDIA_STREAM
 
     path = PurePosixPath(url.split("?", 1)[0].lower())
