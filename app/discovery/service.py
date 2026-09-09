@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import httpx
-from urllib.parse import urljoin
 
 from app.db.models.enums import StreamKind
 from app.discovery.classifier import classify_response
