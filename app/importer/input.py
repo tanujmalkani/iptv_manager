@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
+from app.db.models.enums import SourceType
 from app.importer.service import ImportResult, PlaylistImporter
 
 
@@ -12,7 +14,8 @@ from app.importer.service import ImportResult, PlaylistImporter
 class PlaylistInput:
     name: str
     text: str
-    source_location: str | None = None
+    source_type: SourceType
+    source_location: str
 
 
 def load_playlist_file(path: str | Path) -> PlaylistInput:
@@ -21,6 +24,7 @@ def load_playlist_file(path: str | Path) -> PlaylistInput:
     return PlaylistInput(
         name=file_path.stem or file_path.name,
         text=text,
+        source_type=SourceType.FILE,
         source_location=str(file_path.resolve()),
     )
 
@@ -40,9 +44,11 @@ def load_playlist_url(
     try:
         response = http_client.get(url)
         response.raise_for_status()
+        final_url = str(response.url)
         return PlaylistInput(
-            name=_name_from_url(str(response.url)),
+            name=_name_from_url(final_url),
             text=response.content.decode("utf-8-sig"),
+            source_type=SourceType.URL,
             source_location=url,
         )
     finally:
@@ -60,9 +66,14 @@ def import_input(
         playlist_input.name,
         playlist_input.text,
         source_location=playlist_input.source_location,
+        source_type=playlist_input.source_type,
     )
 
 
 def _name_from_url(url: str) -> str:
-    path = url.rstrip("/").rsplit("/", 1)[-1]
-    return path or "playlist"
+    path = urlsplit(url).path.rstrip("/")
+    if path:
+        name = Path(path).stem
+        if name:
+            return name
+    return "playlist"
