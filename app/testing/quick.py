@@ -29,6 +29,10 @@ _MAX_HEADER_BYTES = 64 * 1024
 _SHOWINFO_FRAME_RE = re.compile(r"\]\s+n:\s*\d+\s+pts:")
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 @dataclass(slots=True)
 class QuickTestResult:
     result: TestResult = TestResult.FAILED
