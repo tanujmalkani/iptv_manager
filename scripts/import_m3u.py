@@ -7,7 +7,9 @@ from app.importer.service import PlaylistImporter
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Import an M3U playlist into IPTV Manager.")
+    parser = argparse.ArgumentParser(
+        description="Import an M3U playlist into IPTV Manager."
+    )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--file", type=Path, help="Path to an M3U/M3U8 playlist file.")
     source.add_argument("--url", help="HTTP(S) URL of an M3U playlist.")
@@ -17,11 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-
-    if args.file:
-        playlist_input = load_playlist_file(args.file)
-    else:
-        playlist_input = load_playlist_url(args.url)
+    playlist_input = (
+        load_playlist_file(args.file)
+        if args.file
+        else load_playlist_url(args.url)
+    )
 
     if args.name:
         playlist_input.name = args.name
@@ -32,6 +34,7 @@ def main() -> int:
             playlist_input.name,
             playlist_input.text,
             source_location=playlist_input.source_location,
+            source_type=playlist_input.source_type,
         )
 
     print(f"Imported {result.entries} entries.")
