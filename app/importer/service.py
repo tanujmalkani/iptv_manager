@@ -181,7 +181,8 @@ class PlaylistImporter:
             stream_url = normalize_url(discovered.final_url or discovered.url)
             stream = self._get_or_create_stream(session, stream_url, discovered.kind)
             stream_map[stream_url] = stream
-            self._add_channel_stream(session, channel, stream)
+            if self._is_playable_kind(discovered.kind):
+                self._add_channel_stream(session, channel, stream)
             result.discovered_streams += 1
 
         root_stream = stream_map.get(root_url)
@@ -212,6 +213,14 @@ class PlaylistImporter:
 
         self._add_channel_options(session, channel, source, playlist_entry, entry)
         self._add_variants(session, root_results, stream_map)
+
+    @staticmethod
+    def _is_playable_kind(kind: StreamKind) -> bool:
+        return kind in {
+            StreamKind.MEDIA_PLAYLIST,
+            StreamKind.MEDIA_STREAM,
+            StreamKind.UNKNOWN,
+        }
 
     def _discover(
         self,
@@ -366,7 +375,7 @@ class PlaylistImporter:
             )
             or 0
         )
-
+        
 
 def normalize_channel_name(value: str) -> str:
     """Normalize names for exact matching without stripping quality markers."""
