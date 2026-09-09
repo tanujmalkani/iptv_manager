@@ -2,7 +2,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Base, Channel, ChannelStream, Stream, StreamTest
-from app.db.models.enums import TestResult, TestRunStatus
+from app.db.models.enums import TestResult as QuickTestResultEnum
+from app.db.models.enums import TestRunStatus as QuickTestRunStatus
 from app.testing import QuickTestResult, QuickTestRunner
 
 
@@ -52,13 +53,13 @@ def test_quick_runner_tests_distinct_playable_streams_once_and_persists_results(
         fake = FakeQuickEngine(
             {
                 first.url: QuickTestResult(
-                    result=TestResult.SUCCESS,
+                    result=QuickTestResultEnum.SUCCESS,
                     available=True,
                     first_frame_ms=321.5,
                     test_duration_ms=350.0,
                 ),
                 second.url: QuickTestResult(
-                    result=TestResult.FAILED,
+                    result=QuickTestResultEnum.FAILED,
                     available=False,
                     error_stage="decoder",
                     error_message="No video",
@@ -69,7 +70,7 @@ def test_quick_runner_tests_distinct_playable_streams_once_and_persists_results(
 
         test_run = QuickTestRunner(fake).run(session)
 
-        assert test_run.status == TestRunStatus.COMPLETED.value
+        assert test_run.status == QuickTestRunStatus.COMPLETED.value
         assert test_run.total_streams == 2
         assert test_run.completed_streams == 2
         assert test_run.successful_streams == 1
@@ -111,7 +112,7 @@ def test_quick_runner_deduplicates_streams_shared_by_channels() -> None:
         fake = FakeQuickEngine(
             {
                 stream.url: QuickTestResult(
-                    result=TestResult.SUCCESS,
+                    result=QuickTestResultEnum.SUCCESS,
                     available=True,
                     first_frame_ms=125.0,
                 )
