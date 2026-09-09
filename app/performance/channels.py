@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -39,6 +39,19 @@ def rank_streams_for_channel(
         for stream in channel.streams
     ]
     ranked = rank_channel_streams(performances)
+
+    # A primary stream is a recommendation backed by at least one successful
+    # observation. Untested or failure-only streams remain visible, but are
+    # never presented as a usable recommendation.
+    primary_stream_id = next(
+        (
+            item.performance.stream_id
+            for item in ranked
+            if item.performance.successful_tests > 0
+        ),
+        None,
+    )
+
     return [
         ChannelStreamRanking(
             channel_id=channel.id,
@@ -46,7 +59,7 @@ def rank_streams_for_channel(
             rank=item.rank,
             score=item.score,
             performance=item.performance,
-            is_primary=item.rank == 1,
+            is_primary=item.performance.stream_id == primary_stream_id,
         )
         for item in ranked
     ]
@@ -87,11 +100,12 @@ def _build_channel_performance_from_tests(
     tests_by_stream: dict[int, list[StreamTest]],
 ) -> ChannelPerformance:
     rankings = rank_streams_for_channel(channel, tests_by_stream)
+    primary_stream_id = next((item.stream_id for item in rankings if item.is_primary), None)
     return ChannelPerformance(
         channel_id=channel.id,
         channel_name=channel.canonical_name,
         streams=tuple(rankings),
-        primary_stream_id=rankings[0].stream_id if rankings else None,
+        primary_stream_id=primary_stream_id,
     )
 
 
