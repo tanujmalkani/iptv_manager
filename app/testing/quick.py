@@ -286,9 +286,9 @@ class QuickTestEngine:
                 header_end = header_data.find(b"\r\n\r\n")
                 if header_end < 0:
                     return phase
-                header_block = bytes(
-                    header_data[:header_end]
-                ).decode("iso-8859-1")
+                header_block = bytes(header_data[:header_end]).decode(
+                    "iso-8859-1"
+                )
                 lines = header_block.split("\r\n")
                 status_parts = lines[0].split(" ", 2)
                 if len(status_parts) >= 2:
@@ -429,7 +429,11 @@ class QuickTestRunner:
         stream_ids: list[int] | None = None,
         on_result: Callable[[StreamTest, int, int], None] | None = None,
     ) -> TestRun:
-        streams = self._select_streams(session, source_playlist_id, stream_ids)
+        streams = self._select_streams(
+            session,
+            source_playlist_id,
+            stream_ids,
+        )
         test_run = TestRun(
             source_playlist_id=source_playlist_id,
             name=name,
