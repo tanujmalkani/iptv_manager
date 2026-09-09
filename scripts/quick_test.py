@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.models import StreamTest
 from app.db.session import SessionLocal
-from app.testing import QuickTestRunner, StreamTestEngine
+from app.testing import StreamTestEngine, StreamTestRunner
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,7 +55,7 @@ def _format_ms(value: float | None) -> str:
 
 def main() -> int:
     args = build_parser().parse_args()
-    runner = QuickTestRunner(
+    runner = StreamTestRunner(
         StreamTestEngine(
             timeout_seconds=args.timeout,
             playback_duration_seconds=args.duration,
