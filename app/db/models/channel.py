@@ -21,7 +21,9 @@ class Channel(Base):
     canonical_name: Mapped[str] = mapped_column(String(512), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
     is_merged: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     entries: Mapped[list[PlaylistEntry]] = relationship(back_populates="channel")
@@ -65,7 +67,9 @@ class ChannelOption(Base):
         ForeignKey("playlist_entries.id", ondelete="SET NULL")
     )
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     channel: Mapped[Channel] = relationship(back_populates="options")
     source_playlist: Mapped[SourcePlaylist | None] = relationship()
@@ -83,14 +87,26 @@ class ChannelSelection(Base):
     epg_id_option_id: Mapped[int | None] = mapped_column(ForeignKey("channel_options.id"))
     epg_name_option_id: Mapped[int | None] = mapped_column(ForeignKey("channel_options.id"))
     group_option_id: Mapped[int | None] = mapped_column(ForeignKey("channel_options.id"))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     channel: Mapped[Channel] = relationship(back_populates="selection")
-    name_option: Mapped[ChannelOption | None] = relationship(foreign_keys=[name_option_id])
-    logo_option: Mapped[ChannelOption | None] = relationship(foreign_keys=[logo_option_id])
-    epg_id_option: Mapped[ChannelOption | None] = relationship(foreign_keys=[epg_id_option_id])
-    epg_name_option: Mapped[ChannelOption | None] = relationship(foreign_keys=[epg_name_option_id])
-    group_option: Mapped[ChannelOption | None] = relationship(foreign_keys=[group_option_id])
+    name_option: Mapped[ChannelOption | None] = relationship(
+        foreign_keys=[name_option_id]
+    )
+    logo_option: Mapped[ChannelOption | None] = relationship(
+        foreign_keys=[logo_option_id]
+    )
+    epg_id_option: Mapped[ChannelOption | None] = relationship(
+        foreign_keys=[epg_id_option_id]
+    )
+    epg_name_option: Mapped[ChannelOption | None] = relationship(
+        foreign_keys=[epg_name_option_id]
+    )
+    group_option: Mapped[ChannelOption | None] = relationship(
+        foreign_keys=[group_option_id]
+    )
 
 
 class ChannelMerge(Base):
