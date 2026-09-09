@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Base, Channel, PlaylistEntry, Stream, StreamVariant
+from app.db.models import Base, Channel, ChannelStream, PlaylistEntry, Stream, StreamVariant
 from app.db.models.enums import StreamKind
 from app.discovery.models import DiscoveryResult, VariantMetadata
 from app.importer.service import PlaylistImporter
@@ -95,9 +95,12 @@ def test_import_persists_channel_streams_options_and_variants() -> None:
 
     entries = session.scalars(select(PlaylistEntry)).all()
     streams = session.scalars(select(Stream)).all()
+    channel_streams = session.scalars(select(ChannelStream)).all()
     variants = session.scalars(select(StreamVariant)).all()
     assert len(entries) == 1
     assert len(streams) == 2
+    assert len(channel_streams) == 1
+    assert channel_streams[0].stream.stream_kind == StreamKind.MEDIA_PLAYLIST.value
     assert len(variants) == 1
     assert variants[0].resolution_width == 1280
     assert variants[0].resolution_height == 720
