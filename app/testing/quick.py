@@ -6,6 +6,7 @@ import ssl
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from urllib.parse import urljoin, urlsplit
@@ -123,12 +124,7 @@ class QuickTestEngine:
         for redirect_count in range(_MAX_REDIRECTS + 1):
             remaining = timeout_seconds - (time.monotonic() - started)
             if remaining <= 0:
-                return _network_error(
-                    result,
-                    "http",
-                    ErrorType.HTTP_TIMEOUT,
-                    "HTTP quick-test timeout expired.",
-                )
+                return _network_error(result, "http", ErrorType.HTTP_TIMEOUT, "HTTP quick-test timeout expired.")
             try:
                 phase = self._http_request(current_url, remaining)
             except socket.gaierror as exc:
@@ -151,36 +147,16 @@ class QuickTestEngine:
             if phase.status_code is not None and 300 <= phase.status_code < 400:
                 location = phase.headers.get("location")
                 if not location:
-                    return _network_error(
-                        result,
-                        "http",
-                        ErrorType.HTTP_ERROR,
-                        f"HTTP {phase.status_code} redirect without Location header.",
-                    )
+                    return _network_error(result, "http", ErrorType.HTTP_ERROR, f"HTTP {phase.status_code} redirect without Location header.")
                 if redirect_count == _MAX_REDIRECTS:
-                    return _network_error(
-                        result,
-                        "http",
-                        ErrorType.HTTP_ERROR,
-                        "Too many HTTP redirects.",
-                    )
+                    return _network_error(result, "http", ErrorType.HTTP_ERROR, "Too many HTTP redirects.")
                 current_url = urljoin(current_url, location)
                 continue
 
             if phase.status_code is not None and phase.status_code >= 400:
-                return _network_error(
-                    result,
-                    "http",
-                    ErrorType.HTTP_ERROR,
-                    f"HTTP {phase.status_code}.",
-                )
+                return _network_error(result, "http", ErrorType.HTTP_ERROR, f"HTTP {phase.status_code}.")
             if phase.first_data_ms is None:
-                return _network_error(
-                    result,
-                    "http",
-                    ErrorType.NO_MEDIA,
-                    "HTTP response contained no body data.",
-                )
+                return _network_error(result, "http", ErrorType.NO_MEDIA, "HTTP response contained no body data.")
             return result
 
         return _network_error(result, "http", ErrorType.HTTP_ERROR, "HTTP request failed.")
@@ -214,10 +190,7 @@ class QuickTestEngine:
             if parsed.scheme == "https":
                 tls_start = time.monotonic()
                 context = ssl.create_default_context()
-                sock: socket.socket = context.wrap_socket(
-                    raw_socket,
-                    server_hostname=parsed.hostname,
-                )
+                sock: socket.socket = context.wrap_socket(raw_socket, server_hostname=parsed.hostname)
                 phase.tls_ms = _elapsed_ms(tls_start)
             else:
                 sock = raw_socket
@@ -280,11 +253,7 @@ class QuickTestEngine:
             raw_socket.close()
             raise
 
-    def _test_first_frame(
-        self,
-        url: str,
-        timeout_seconds: float,
-    ) -> tuple[float | None, tuple[ErrorType, str]]:
+    def _test_first_frame(self, url: str, timeout_seconds: float) -> tuple[float | None, tuple[ErrorType, str]]:
         started = time.monotonic()
         try:
             process = subprocess.Popen(
@@ -312,10 +281,7 @@ class QuickTestEngine:
                 errors="replace",
             )
         except FileNotFoundError:
-            return None, (
-                ErrorType.PROBE_FAILURE,
-                f"FFmpeg binary not found: {self.ffmpeg_binary}",
-            )
+            return None, (ErrorType.PROBE_FAILURE, f"FFmpeg binary not found: {self.ffmpeg_binary}")
         except OSError as exc:
             return None, (ErrorType.PROBE_FAILURE, str(exc))
 
@@ -347,26 +313,15 @@ class QuickTestEngine:
         if first_frame_ms is not None:
             return first_frame_ms, (ErrorType.UNKNOWN, "")
         if time.monotonic() - started >= timeout_seconds:
-            return None, (
-                ErrorType.STARTUP_TIMEOUT,
-                "FFmpeg did not decode a video frame before timeout.",
-            )
+            return None, (ErrorType.STARTUP_TIMEOUT, "FFmpeg did not decode a video frame before timeout.")
 
         stderr = " ".join(line for line in lines if line)
         lower_stderr = stderr.lower()
         if process.returncode == 0:
-            return None, (
-                ErrorType.NO_VIDEO,
-                "FFmpeg completed without decoding a video frame.",
-            )
-        if "unknown decoder" in lower_stderr or (
-            "decoder" in lower_stderr and "not found" in lower_stderr
-        ):
+            return None, (ErrorType.NO_VIDEO, "FFmpeg completed without decoding a video frame.")
+        if "unknown decoder" in lower_stderr or ("decoder" in lower_stderr and "not found" in lower_stderr):
             return None, (ErrorType.CODEC_ERROR, stderr or "FFmpeg decoder unavailable.")
-        return None, (
-            ErrorType.DECODER_ERROR,
-            stderr or "FFmpeg failed before decoding a video frame.",
-        )
+        return None, (ErrorType.DECODER_ERROR, stderr or "FFmpeg failed before decoding a video frame.")
 
     @staticmethod
     def _remaining(deadline: float) -> float:
@@ -386,6 +341,7 @@ class QuickTestRunner:
         name: str = "Quick Test",
         source_playlist_id: int | None = None,
         stream_ids: list[int] | None = None,
+        on_result: Callable[[StreamTest, int, int], None] | None = None,
     ) -> TestRun:
         streams = self._select_streams(session, source_playlist_id, stream_ids)
         test_run = TestRun(
@@ -405,35 +361,32 @@ class QuickTestRunner:
         session.flush()
 
         try:
-            for stream in streams:
+            for index, stream in enumerate(streams, start=1):
                 result = self.engine.test(stream.url)
-                session.add(
-                    StreamTest(
-                        test_run_id=test_run.id,
-                        stream_id=stream.id,
-                        attempt_number=self._next_attempt_number(
-                            session, test_run.id, stream.id
-                        ),
-                        test_type=TestType.QUICK.value,
-                        result=result.result.value,
-                        started_at=_utcnow(),
-                        completed_at=_utcnow(),
-                        available=result.available,
-                        error_stage=result.error_stage,
-                        error_type=result.error_type.value if result.error_type else None,
-                        error_message=result.error_message,
-                        dns_ms=result.dns_ms,
-                        connect_ms=result.connect_ms,
-                        tls_ms=result.tls_ms,
-                        http_response_ms=result.http_response_ms,
-                        manifest_ms=result.manifest_ms,
-                        first_data_ms=result.first_data_ms,
-                        first_frame_ms=result.first_frame_ms,
-                        bytes_received=result.bytes_received,
-                        test_duration_ms=result.test_duration_ms,
-                        extra_metrics=result.extra_metrics,
-                    )
+                stream_test = StreamTest(
+                    test_run_id=test_run.id,
+                    stream_id=stream.id,
+                    attempt_number=self._next_attempt_number(session, test_run.id, stream.id),
+                    test_type=TestType.QUICK.value,
+                    result=result.result.value,
+                    started_at=_utcnow(),
+                    completed_at=_utcnow(),
+                    available=result.available,
+                    error_stage=result.error_stage,
+                    error_type=result.error_type.value if result.error_type else None,
+                    error_message=result.error_message,
+                    dns_ms=result.dns_ms,
+                    connect_ms=result.connect_ms,
+                    tls_ms=result.tls_ms,
+                    http_response_ms=result.http_response_ms,
+                    manifest_ms=result.manifest_ms,
+                    first_data_ms=result.first_data_ms,
+                    first_frame_ms=result.first_frame_ms,
+                    bytes_received=result.bytes_received,
+                    test_duration_ms=result.test_duration_ms,
+                    extra_metrics=result.extra_metrics,
                 )
+                session.add(stream_test)
                 test_run.completed_streams += 1
                 if result.available:
                     test_run.successful_streams += 1
@@ -441,6 +394,9 @@ class QuickTestRunner:
                     test_run.failed_streams += 1
                 session.commit()
                 session.refresh(test_run)
+                session.refresh(stream_test)
+                if on_result is not None:
+                    on_result(stream_test, index, len(streams))
 
             test_run.status = TestRunStatus.COMPLETED.value
             test_run.completed_at = _utcnow()
@@ -454,11 +410,7 @@ class QuickTestRunner:
             raise
 
     @staticmethod
-    def _select_streams(
-        session: Session,
-        source_playlist_id: int | None,
-        stream_ids: list[int] | None,
-    ) -> list[Stream]:
+    def _select_streams(session: Session, source_playlist_id: int | None, stream_ids: list[int] | None) -> list[Stream]:
         statement = (
             select(Stream)
             .join(ChannelStream, ChannelStream.stream_id == Stream.id)
@@ -472,35 +424,29 @@ class QuickTestRunner:
         if source_playlist_id is not None:
             statement = (
                 statement.join(PlaylistEntry, PlaylistEntry.channel_id == ChannelStream.channel_id)
-                .join(
-                    SourcePlaylistVersion,
-                    SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id,
-                )
+                .join(SourcePlaylistVersion, SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id)
                 .where(SourcePlaylistVersion.source_playlist_id == source_playlist_id)
             )
         return session.scalars(statement).all()
 
     @staticmethod
     def _next_attempt_number(session: Session, test_run_id: int, stream_id: int) -> int:
-        """Return the next historical attempt number for a stream across all test runs."""
+        del test_run_id
         latest = session.scalar(
-            select(func.max(StreamTest.attempt_number)).where(
-                StreamTest.stream_id == stream_id,
-            )
+            select(func.max(StreamTest.attempt_number)).where(StreamTest.stream_id == stream_id)
         )
         return (latest or 0) + 1
 
 
-def _network_error(
-    result: _NetworkResult,
-    stage: str,
-    error_type: ErrorType,
-    message: str,
-) -> _NetworkResult:
+def _network_error(result: _NetworkResult, stage: str, error_type: ErrorType, message: str) -> _NetworkResult:
     result.error_stage = stage
     result.error_type = error_type
     result.error_message = message
     return result
+
+
+def _elapsed_ms(started: float) -> float:
+    return (time.monotonic() - started) * 1000.0
 
 
 def _sum_ms(first: float | None, second: float | None) -> float | None:
@@ -509,11 +455,3 @@ def _sum_ms(first: float | None, second: float | None) -> float | None:
     if second is None:
         return first
     return first + second
-
-
-def _elapsed_ms(started: float) -> float:
-    return (time.monotonic() - started) * 1000.0
-
-
-def _utcnow() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
