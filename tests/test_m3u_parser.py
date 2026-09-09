@@ -2,11 +2,12 @@ from app.m3u.parser import parse_m3u
 
 
 def test_parse_extended_m3u_attributes() -> None:
-    text = """#EXTM3U
-#EXTINF:-1 tvg-id="bbc1.uk" tvg-name="BBC One" \
-tvg-logo="https://logo/bbc1.png" group-title="UK",BBC One
-https://stream.example/bbc1.m3u8
-"""
+    text = (
+        '#EXTM3U\n'
+        '#EXTINF:-1 tvg-id="bbc1.uk" tvg-name="BBC One" '
+        'tvg-logo="https://logo/bbc1.png" group-title="UK",BBC One\n'
+        'https://stream.example/bbc1.m3u8\n'
+    )
     playlist = parse_m3u(text)
 
     assert len(playlist.entries) == 1
