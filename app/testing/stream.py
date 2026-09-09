@@ -4,6 +4,7 @@ import re
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -97,10 +98,7 @@ class StreamTestEngine(QuickTestEngine):
                 errors="replace",
             )
         except FileNotFoundError:
-            return self._playback_failure(
-                ErrorType.PROBE_FAILURE,
-                f"FFmpeg binary not found: {self.ffmpeg_binary}",
-            )
+            return self._playback_failure(ErrorType.PROBE_FAILURE, f"FFmpeg binary not found: {self.ffmpeg_binary}")
         except OSError as exc:
             return self._playback_failure(ErrorType.PROBE_FAILURE, str(exc))
 
@@ -143,10 +141,7 @@ class StreamTestEngine(QuickTestEngine):
                     if first_frame_ms is None:
                         first_frame_ms = (time.monotonic() - started) * 1000.0
                         playback_started = time.monotonic()
-                        timer = threading.Timer(
-                            self.playback_duration_seconds,
-                            process.kill,
-                        )
+                        timer = threading.Timer(self.playback_duration_seconds, process.kill)
                         timer.daemon = True
                         timer.start()
         finally:
@@ -239,12 +234,14 @@ class StreamTestRunner(QuickTestRunner):
         name: str = "Stream Test",
         source_playlist_id: int | None = None,
         stream_ids: list[int] | None = None,
+        on_result: Callable[[StreamTest, int, int], None] | None = None,
     ) -> TestRun:
         test_run = super().run(
             session,
             name=name,
             source_playlist_id=source_playlist_id,
             stream_ids=stream_ids,
+            on_result=on_result,
         )
         engine = cast(StreamTestEngine, self.engine)
         test_run.configuration_json = {
