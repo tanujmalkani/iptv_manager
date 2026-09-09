@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Channel, PlaylistEntry, SourcePlaylistVersion
+from app.db.models import PlaylistEntry, SourcePlaylistVersion, Stream
 from app.db.models.enums import VersionStatus
 from app.performance.channels import get_channels_performance
 
@@ -36,15 +36,16 @@ def export_optimized_m3u(
 
     entries = session.scalars(
         select(PlaylistEntry)
-        .options(selectinload(PlaylistEntry.channel))
+        .options(selectinload(PlaylistEntry.channel), selectinload(PlaylistEntry.stream))
         .where(PlaylistEntry.source_playlist_version_id == version.id)
         .order_by(PlaylistEntry.original_position, PlaylistEntry.id)
     ).all()
 
+    channel_ids = {entry.channel_id for entry in entries}
     performances = {
         item.channel_id: item
         for item in get_channels_performance(session)
-        if any(entry.channel_id == item.channel_id for entry in entries)
+        if item.channel_id in channel_ids
     }
 
     selected_entries: dict[int, PlaylistEntry] = {}
@@ -59,15 +60,14 @@ def export_optimized_m3u(
         performance = performances.get(entry.channel_id)
         primary_stream_id = performance.primary_stream_id if performance else None
         stream_url = entry.stream.url
+
         if primary_stream_id is not None:
-            ranked = next(
-                item for item in performance.streams if item.stream_id == primary_stream_id
-            )
-            stream_url = _stream_url(session, primary_stream_id) or stream_url
-            if stream_url != entry.stream.url:
-                optimized_count += 1
-            else:
-                fallback_count += 1
+            primary_stream = session.get(Stream, primary_stream_id)
+            if primary_stream is not None:
+                stream_url = primary_stream.url
+
+        if stream_url != entry.stream.url:
+            optimized_count += 1
         else:
             fallback_count += 1
 
@@ -101,22 +101,12 @@ def _get_version(
     return session.scalar(statement)
 
 
-def _stream_url(session: Session, stream_id: int) -> str | None:
-    stream = session.get(__import__("app.db.models", fromlist=["Stream"]).Stream, stream_id)
-    return stream.url if stream else None
-
-
 def _render_extinf(entry: PlaylistEntry) -> str:
     if entry.raw_extinf:
         return entry.raw_extinf
 
-    duration = "-1" if entry.duration is None else _format_number(entry.duration)
     attributes = "".join(
         f' {key}="{value.replace(chr(34), chr(39))}"'
         for key, value in entry.original_attributes.items()
     )
-    return f"#EXTINF:{duration}{attributes},{entry.original_name or ''}"
-
-
-def _format_number(value: float) -> str:
-    return str(int(value)) if value.is_integer() else str(value)
+    return f"#EXTINF:-1{attributes},{entry.original_name or ''}"
