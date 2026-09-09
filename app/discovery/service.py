@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import AbstractContextManager
+from typing import Protocol
 
 import httpx
 
@@ -9,6 +11,14 @@ from app.discovery.classifier import classify_response
 from app.discovery.hls import parse_master_playlist
 from app.discovery.models import DiscoveryResult, VariantMetadata
 from app.discovery.url import normalize_url
+
+
+class _ResponseContext(AbstractContextManager[httpx.Response], Protocol):
+    pass
+
+
+class _Client(Protocol):
+    def stream(self, method: str, url: str, *, follow_redirects: bool = True) -> _ResponseContext: ...
 
 
 class StreamDiscovery:
@@ -26,7 +36,7 @@ class StreamDiscovery:
         self.max_response_bytes = max_response_bytes
         self.max_depth = max_depth
         self.max_streams = max_streams
-        self._client = client
+        self._client: _Client | None = client
         self._owns_client = client is None
 
     def __enter__(self) -> StreamDiscovery:
@@ -40,7 +50,7 @@ class StreamDiscovery:
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
         if self._owns_client and self._client is not None:
-            self._client.close()
+            self._client.close()  # type: ignore[attr-defined]
             self._client = None
 
     def discover(self, root_url: str) -> list[DiscoveryResult]:
@@ -83,11 +93,33 @@ class StreamDiscovery:
         variant_metadata: VariantMetadata | None,
     ) -> tuple[DiscoveryResult, list[_Child]]:
         try:
-            response = self._client.get(url, follow_redirects=True)
-            final_url = normalize_url(str(response.url))
-            content_type = response.headers.get("content-type")
-            body = self._read_limited(response)
-            kind = classify_response(final_url, content_type, body)
+            with self._client.stream("GET", url, follow_redirects=True) as response:
+                final_url = normalize_url(str(response.url))
+                content_type = response.headers.get("content-type")
+                kind = classify_response(final_url, content_type, b"")
+
+                if kind == StreamKind.MEDIA_STREAM:
+                    return (
+                        DiscoveryResult(
+                            url=url,
+                            final_url=final_url,
+                            kind=kind,
+                            content_type=content_type,
+                            http_status=response.status_code,
+                            parent_url=parent_url,
+                            depth=depth,
+                            variant_metadata=variant_metadata,
+                            error=(
+                                f"HTTP {response.status_code}"
+                                if response.status_code >= 400
+                                else None
+                            ),
+                        ),
+                        [],
+                    )
+
+                body = self._read_limited(response)
+                kind = classify_response(final_url, content_type, body)
         except httpx.TimeoutException as exc:
             return (
                 DiscoveryResult(
@@ -171,11 +203,22 @@ class StreamDiscovery:
         )
 
     def _read_limited(self, response: httpx.Response) -> bytes:
-        if response.content and len(response.content) <= self.max_response_bytes:
-            return response.content
-        if len(response.content) > self.max_response_bytes:
-            return response.content[: self.max_response_bytes]
-        return b""
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in response.iter_bytes():
+            remaining = self.max_response_bytes - total
+            if remaining <= 0:
+                raise ValueError(
+                    f"response exceeds maximum size of {self.max_response_bytes} bytes"
+                )
+            chunks.append(chunk[:remaining])
+            total += min(len(chunk), remaining)
+            if len(chunk) > remaining or total >= self.max_response_bytes:
+                if len(chunk) > remaining or next(response.iter_bytes(), b""):
+                    raise ValueError(
+                        f"response exceeds maximum size of {self.max_response_bytes} bytes"
+                    )
+        return b"".join(chunks)
 
 
 class _Child:
