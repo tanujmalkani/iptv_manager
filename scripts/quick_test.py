@@ -5,15 +5,15 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db.models import StreamTest
 from app.db.session import SessionLocal
-from app.testing import QuickTestEngine, QuickTestRunner
+from app.testing import QuickTestRunner, StreamTestEngine
 
 
 def build_parser() -> argparse.ArgumentParser:
     settings = get_settings()
     parser = argparse.ArgumentParser(
-        description="Run sequential IPTV quick tests against playable streams."
+        description="Run sequential IPTV stream tests with startup and sustained playback."
     )
-    parser.add_argument("--name", default="Quick Test", help="Test run name.")
+    parser.add_argument("--name", default="Stream Test", help="Test run name.")
     parser.add_argument(
         "--source-playlist-id",
         type=int,
@@ -31,9 +31,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=settings.quick_test_timeout_seconds,
         help=(
-            "Overall timeout per stream in seconds "
+            "Startup timeout per stream in seconds "
             f"(default: {settings.quick_test_timeout_seconds})."
         ),
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=10.0,
+        help="Sustained playback duration per stream in seconds (default: 10).",
     )
     parser.add_argument(
         "--ffmpeg",
@@ -50,7 +56,11 @@ def _format_ms(value: float | None) -> str:
 def main() -> int:
     args = build_parser().parse_args()
     runner = QuickTestRunner(
-        QuickTestEngine(timeout_seconds=args.timeout, ffmpeg_binary=args.ffmpeg)
+        StreamTestEngine(
+            timeout_seconds=args.timeout,
+            playback_duration_seconds=args.duration,
+            ffmpeg_binary=args.ffmpeg,
+        )
     )
 
     with SessionLocal() as session:
@@ -66,7 +76,7 @@ def main() -> int:
             .order_by(StreamTest.stream_id, StreamTest.attempt_number)
         ).all()
 
-    print(f"Quick test run: {test_run.id}")
+    print(f"Stream test run: {test_run.id}")
     print(f"Status: {test_run.status}")
     print(f"Streams: {test_run.total_streams}")
     print(f"Completed: {test_run.completed_streams}")
@@ -76,6 +86,7 @@ def main() -> int:
     if stream_tests:
         print("\nResults:")
         for stream_test in stream_tests:
+            metrics = stream_test.extra_metrics or {}
             print(f"\nStream {stream_test.stream_id}")
             print(f"  Result:        {stream_test.result}")
             print(f"  Available:     {'yes' if stream_test.available else 'no'}")
@@ -86,9 +97,22 @@ def main() -> int:
             print(f"  First data:     {_format_ms(stream_test.first_data_ms)}")
             print(f"  First frame:    {_format_ms(stream_test.first_frame_ms)}")
             print(f"  Duration:       {_format_ms(stream_test.test_duration_ms)}")
-            if not stream_test.available:
-                print(f"  Error stage:    {stream_test.error_stage or '-'}")
-                print(f"  Error type:     {stream_test.error_type or '-'}")
+            print(f"  Playback:       {_format_ms(metrics.get('playback_duration_ms'))}")
+            print(f"  Decoded frames: {metrics.get('decoded_frames', '-')}")
+            print(f"  Resolution:     {metrics.get('resolution') or '-'}")
+            fps = metrics.get("observed_fps")
+            print(
+                f"  Observed FPS:   {float(fps):.2f}"
+                if fps is not None
+                else "  Observed FPS:   -"
+            )
+            print(f"  Codec:          {metrics.get('codec') or '-'}")
+            print(f"  Audio:          {'yes' if metrics.get('audio_present') else 'no'}")
+            print(f"  Stable:         {'yes' if metrics.get('stable') else 'no'}")
+            if stream_test.error_stage:
+                print(f"  Error stage:    {stream_test.error_stage}")
+            if stream_test.error_type:
+                print(f"  Error type:     {stream_test.error_type}")
 
     return 0
 
