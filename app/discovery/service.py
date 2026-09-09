@@ -18,7 +18,9 @@ class _ResponseContext(AbstractContextManager[httpx.Response], Protocol):
 
 
 class _Client(Protocol):
-    def stream(self, method: str, url: str, *, follow_redirects: bool = True) -> _ResponseContext: ...
+    def stream(
+        self, method: str, url: str, *, follow_redirects: bool = True
+    ) -> _ResponseContext: ...
 
     def close(self) -> None: ...
 
