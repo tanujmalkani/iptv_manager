@@ -20,6 +20,8 @@ class _ResponseContext(AbstractContextManager[httpx.Response], Protocol):
 class _Client(Protocol):
     def stream(self, method: str, url: str, *, follow_redirects: bool = True) -> _ResponseContext: ...
 
+    def close(self) -> None: ...
+
 
 class StreamDiscovery:
     """Sequentially discover playable streams and HLS variants from a root URL."""
@@ -30,13 +32,13 @@ class StreamDiscovery:
         max_response_bytes: int = 10 * 1024 * 1024,
         max_depth: int = 5,
         max_streams: int = 100,
-        client: httpx.Client | None = None,
+        client: _Client | None = None,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.max_response_bytes = max_response_bytes
         self.max_depth = max_depth
         self.max_streams = max_streams
-        self._client: _Client | None = client
+        self._client = client
         self._owns_client = client is None
 
     def __enter__(self) -> StreamDiscovery:
@@ -50,7 +52,7 @@ class StreamDiscovery:
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
         if self._owns_client and self._client is not None:
-            self._client.close()  # type: ignore[attr-defined]
+            self._client.close()
             self._client = None
 
     def discover(self, root_url: str) -> list[DiscoveryResult]:
@@ -206,18 +208,12 @@ class StreamDiscovery:
         chunks: list[bytes] = []
         total = 0
         for chunk in response.iter_bytes():
-            remaining = self.max_response_bytes - total
-            if remaining <= 0:
+            if total + len(chunk) > self.max_response_bytes:
                 raise ValueError(
                     f"response exceeds maximum size of {self.max_response_bytes} bytes"
                 )
-            chunks.append(chunk[:remaining])
-            total += min(len(chunk), remaining)
-            if len(chunk) > remaining or total >= self.max_response_bytes:
-                if len(chunk) > remaining or next(response.iter_bytes(), b""):
-                    raise ValueError(
-                        f"response exceeds maximum size of {self.max_response_bytes} bytes"
-                    )
+            chunks.append(chunk)
+            total += len(chunk)
         return b"".join(chunks)
 
 
