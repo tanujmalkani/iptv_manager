@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -7,4 +8,4 @@ class Base(DeclarativeBase):
 
 
 def utcnow() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
