@@ -43,25 +43,40 @@ def _parse_extinf(line: str) -> tuple[float | None, dict[str, str], str]:
 
 
 def parse_m3u(text: str) -> M3UPlaylist:
-    lines = [line.lstrip("\ufeff").strip() for line in text.splitlines()]
-    if not lines or not lines[0].upper().startswith("#EXTM3U"):
-        raise ValueError("Playlist does not start with #EXTM3U")
+    """Parse tolerant Extended M3U text while preserving source directives."""
+    raw_lines = text.splitlines()
+    if not raw_lines:
+        raise ValueError("Playlist is empty")
+
+    lines = [line.lstrip("\ufeff", 1) if index == 0 else line for index, line in enumerate(raw_lines)]
+    first_content_index = next(
+        (index for index, line in enumerate(lines) if line.strip()),
+        None,
+    )
+    if first_content_index is None:
+        raise ValueError("Playlist is empty")
+
+    first_line = lines[first_content_index].strip()
+    has_header = first_line.upper().startswith("#EXTM3U")
+    start_index = first_content_index + 1 if has_header else first_content_index
+    header = lines[first_content_index] if has_header else "#EXTM3U"
 
     entries: list[M3UEntry] = []
     directives: list[str] = []
-    pending_extinf: tuple[int, str] | None = None
+    pending_extinf: str | None = None
     pending_directives: list[str] = []
 
-    for line_number, line in enumerate(lines[1:], start=2):
-        if not line:
+    for line in lines[start_index:]:
+        stripped = line.strip()
+        if not stripped:
             continue
 
-        if line.startswith("#EXTINF:"):
-            pending_extinf = (line_number, line)
+        if stripped.upper().startswith("#EXTINF:"):
+            pending_extinf = stripped
             continue
 
-        if line.startswith("#"):
-            pending_directives.append(line)
+        if stripped.startswith("#"):
+            pending_directives.append(stripped)
             continue
 
         if pending_extinf is None:
@@ -69,30 +84,30 @@ def parse_m3u(text: str) -> M3UPlaylist:
                 M3UEntry(
                     position=len(entries),
                     name="",
-                    url=line,
+                    url=stripped,
                     directives=list(pending_directives),
                 )
             )
             pending_directives.clear()
             continue
 
-        _, raw_extinf = pending_extinf
-        duration, attributes, name = _parse_extinf(raw_extinf)
+        duration, attributes, name = _parse_extinf(pending_extinf)
         entries.append(
             M3UEntry(
                 position=len(entries),
                 name=name,
-                url=line,
+                url=stripped,
                 duration=duration,
                 attributes=attributes,
                 directives=list(pending_directives),
-                raw_extinf=raw_extinf,
+                raw_extinf=pending_extinf,
             )
         )
         pending_extinf = None
         pending_directives.clear()
 
-    if pending_directives:
-        directives.extend(pending_directives)
+    if pending_extinf is not None:
+        pending_directives.insert(0, pending_extinf)
+    directives.extend(pending_directives)
 
-    return M3UPlaylist(header=lines[0], entries=entries, directives=directives)
+    return M3UPlaylist(header=header, entries=entries, directives=directives)
