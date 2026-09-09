@@ -17,16 +17,28 @@ from app.db.session import SessionLocal
 def main() -> int:
     with SessionLocal() as session:
         counts = {
-            "Source playlists": session.scalar(select(func.count()).select_from(SourcePlaylist)) or 0,
+            "Source playlists": session.scalar(
+                select(func.count()).select_from(SourcePlaylist)
+            )
+            or 0,
             "Playlist versions": session.scalar(
                 select(func.count()).select_from(SourcePlaylistVersion)
             )
             or 0,
-            "Playlist entries": session.scalar(select(func.count()).select_from(PlaylistEntry)) or 0,
+            "Playlist entries": session.scalar(
+                select(func.count()).select_from(PlaylistEntry)
+            )
+            or 0,
             "Channels": session.scalar(select(func.count()).select_from(Channel)) or 0,
             "Streams": session.scalar(select(func.count()).select_from(Stream)) or 0,
-            "Channel streams": session.scalar(select(func.count()).select_from(ChannelStream)) or 0,
-            "Stream variants": session.scalar(select(func.count()).select_from(StreamVariant)) or 0,
+            "Channel streams": session.scalar(
+                select(func.count()).select_from(ChannelStream)
+            )
+            or 0,
+            "Stream variants": session.scalar(
+                select(func.count()).select_from(StreamVariant)
+            )
+            or 0,
         }
 
         print("IPTV Manager Database")
