@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
+import re
 
 
-_ATTR_RE = re.compile(r'([A-Za-z0-9_-]+)=(?:"([^"]*)"|([^\\s,]+))')
+_ATTR_RE = re.compile(r'([A-Za-z0-9_-]+)=(?:"([^"]*)"|([^\s,]+))')
 
 
 @dataclass(slots=True)
