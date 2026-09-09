@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 
 
-_ATTR_RE = re.compile(r'([A-Za-z0-9_-]+)=(?:"([^"]*)"|([^\s,]+))')
+_ATTR_RE = re.compile(r'([A-Za-z0-9_-]+)=(?:"([^"]*)"|([^\\s,]+))')
 
 
 @dataclass(slots=True)
@@ -36,7 +36,8 @@ def _parse_extinf(line: str) -> tuple[float | None, dict[str, str], str]:
     attributes: dict[str, str] = {}
     prefix = payload[: len(payload) - len(title)] if separator else payload
     for match in _ATTR_RE.finditer(prefix):
-        attributes[match.group(1)] = match.group(2) if match.group(2) is not None else match.group(3) or ""
+        value = match.group(2) if match.group(2) is not None else match.group(3) or ""
+        attributes[match.group(1)] = value
 
     return duration, attributes, title.strip()
 
@@ -64,7 +65,6 @@ def parse_m3u(text: str) -> M3UPlaylist:
             continue
 
         if pending_extinf is None:
-            # Tolerate a bare URL. It can still be a valid stream entry.
             entries.append(
                 M3UEntry(
                     position=len(entries),
