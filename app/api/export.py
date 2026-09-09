@@ -24,12 +24,9 @@ def export_source_playlist(
     if result is None:
         raise HTTPException(status_code=404, detail="Completed playlist version not found")
 
+    filename = f"iptv-manager-optimized-v{result.source_playlist_version_number}.m3u"
     return PlainTextResponse(
         result.content,
         media_type="audio/x-mpegurl",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="iptv-manager-optimized-v{result.source_playlist_version_number}.m3u"'
-            )
-        },
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
