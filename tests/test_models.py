@@ -17,8 +17,8 @@ from app.db.models import (
     Stream,
     StreamTest,
     StreamVariant,
-    TestRun as TestRunModel,
 )
+from app.db.models import TestRun as TestRunModel
 
 
 def test_model_metadata_creates_and_relationships_round_trip() -> None:
