@@ -4,9 +4,14 @@ import re
 import subprocess
 import threading
 import time
+from urllib.parse import urlsplit
 
-from app.db.models.enums import ErrorType, TestResult
-from app.testing.quick import QuickTestEngine, QuickTestResult
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db.models import StreamTest, TestRun
+from app.db.models.enums import ErrorType, TestResult, TestType
+from app.testing.quick import QuickTestEngine, QuickTestResult, QuickTestRunner
 
 _STREAM_INFO_RE = re.compile(r"Video:\s*([^,\s]+)")
 _RESOLUTION_RE = re.compile(r"\bs:\s*(\d+)x(\d+)")
@@ -32,8 +37,6 @@ class StreamTestEngine(QuickTestEngine):
     def test(self, url: str) -> QuickTestResult:
         started = time.monotonic()
         result = QuickTestResult()
-
-        from urllib.parse import urlsplit
 
         if urlsplit(url).scheme in {"http", "https"}:
             network = self._test_http(url, self.timeout_seconds)
@@ -69,7 +72,6 @@ class StreamTestEngine(QuickTestEngine):
 
     def _test_playback(self, url: str) -> dict[str, object]:
         started = time.monotonic()
-        process: subprocess.Popen[str]
         try:
             process = subprocess.Popen(
                 [
@@ -224,3 +226,39 @@ class StreamTestEngine(QuickTestEngine):
             "error_type": error_type,
             "error_message": message,
         }
+
+
+class StreamTestRunner(QuickTestRunner):
+    """Persist combined stream-test observations with historical attempt numbers."""
+
+    def run(
+        self,
+        session: Session,
+        *,
+        name: str = "Stream Test",
+        source_playlist_id: int | None = None,
+        stream_ids: list[int] | None = None,
+    ) -> TestRun:
+        test_run = super().run(
+            session,
+            name=name,
+            source_playlist_id=source_playlist_id,
+            stream_ids=stream_ids,
+        )
+        test_run.configuration_json = {
+            **test_run.configuration_json,
+            "playback_duration_seconds": self.engine.playback_duration_seconds,
+        }
+        session.commit()
+        return test_run
+
+    @staticmethod
+    def _next_attempt_number(session: Session, test_run_id: int, stream_id: int) -> int:
+        del test_run_id
+        latest = session.scalar(
+            select(func.max(StreamTest.attempt_number)).where(
+                StreamTest.stream_id == stream_id,
+                StreamTest.test_type == TestType.QUICK.value,
+            )
+        )
+        return (latest or 0) + 1
