@@ -482,9 +482,9 @@ class QuickTestRunner:
 
     @staticmethod
     def _next_attempt_number(session: Session, test_run_id: int, stream_id: int) -> int:
+        """Return the next historical attempt number for a stream across all test runs."""
         latest = session.scalar(
             select(func.max(StreamTest.attempt_number)).where(
-                StreamTest.test_run_id == test_run_id,
                 StreamTest.stream_id == stream_id,
             )
         )
