@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Base, Channel, ChannelStream, Stream, StreamTest, TestRun
+from app.db.models import Base, Channel, ChannelStream, Stream, StreamTest
 from app.db.models.enums import TestResult, TestRunStatus
 from app.testing import QuickTestResult, QuickTestRunner
 
@@ -123,6 +123,6 @@ def test_quick_runner_deduplicates_streams_shared_by_channels() -> None:
         assert test_run.total_streams == 1
         assert test_run.completed_streams == 1
         assert fake.calls == [stream.url]
-        assert session.scalar(select(StreamTest).count()) is None
+        assert len(session.scalars(select(StreamTest)).all()) == 1
     finally:
         session.close()
