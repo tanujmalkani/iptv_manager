@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.db.models import Base, Channel, ChannelStream, Stream, StreamTest, TestRun
 from app.db.session import get_db
@@ -10,7 +11,11 @@ from app.main import app
 
 
 def make_client() -> tuple[TestClient, Session]:
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     session = Session(engine)
 
