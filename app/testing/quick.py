@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import socket
 import ssl
 import subprocess
@@ -24,7 +25,7 @@ from app.db.models.enums import ErrorType, TestResult, TestRunStatus, TestType
 
 _MAX_REDIRECTS = 5
 _MAX_HEADER_BYTES = 64 * 1024
-_SHOWINFO_MARKER = "showinfo"
+_SHOWINFO_FRAME_RE = re.compile(r"\]\s+n:\s*\d+\s+pts:")
 
 
 @dataclass(slots=True)
@@ -328,7 +329,7 @@ class QuickTestEngine:
             for line in process.stderr:
                 if len(lines) < 20:
                     lines.append(line.strip())
-                if _SHOWINFO_MARKER in line.lower():
+                if _SHOWINFO_FRAME_RE.search(line):
                     first_frame_ms = _elapsed_ms(started)
                     process.terminate()
                     break
