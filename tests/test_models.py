@@ -17,7 +17,7 @@ from app.db.models import (
     Stream,
     StreamTest,
     StreamVariant,
-    TestRun,
+    TestRun as TestRunModel,
 )
 
 
@@ -87,7 +87,11 @@ def test_model_metadata_creates_and_relationships_round_trip() -> None:
         )
         session.add(variant)
 
-        test_run = TestRun(source_playlist=source, name="Quick test", profile="quick")
+        test_run = TestRunModel(
+            source_playlist=source,
+            name="Quick test",
+            profile="quick",
+        )
         session.add(test_run)
         session.flush()
         stream_test = StreamTest(
@@ -112,10 +116,16 @@ def test_model_metadata_creates_and_relationships_round_trip() -> None:
         )
         session.add(profile_entry)
 
-        merge_target = Channel(canonical_name="Example", normalized_name="example")
+        merge_target = Channel(
+            canonical_name="Example",
+            normalized_name="example",
+        )
         session.add(merge_target)
         session.flush()
-        merge = ChannelMerge(source_channel=channel, target_channel=merge_target)
+        merge = ChannelMerge(
+            source_channel=channel,
+            target_channel=merge_target,
+        )
         session.add(merge)
 
         session.commit()
