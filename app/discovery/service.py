@@ -7,7 +7,7 @@ import httpx
 from app.db.models.enums import StreamKind
 from app.discovery.classifier import classify_response
 from app.discovery.hls import parse_master_playlist
-from app.discovery.models import DiscoveryResult
+from app.discovery.models import DiscoveryResult, VariantMetadata
 from app.discovery.url import normalize_url
 
 
@@ -51,28 +51,36 @@ class StreamDiscovery:
 
         results: list[DiscoveryResult] = []
         visited: set[str] = set()
-        pending: list[tuple[str, str | None, int]] = [(normalize_url(root_url), None, 0)]
+        pending: list[tuple[str, str | None, int, VariantMetadata | None]] = [
+            (normalize_url(root_url), None, 0, None)
+        ]
 
         while pending and len(results) < self.max_streams:
-            url, parent_url, depth = pending.pop(0)
+            url, parent_url, depth, variant_metadata = pending.pop(0)
             normalized = normalize_url(url)
             if normalized in visited:
                 continue
             visited.add(normalized)
 
-            result, children = self._inspect(normalized, parent_url, depth)
+            result, children = self._inspect(normalized, parent_url, depth, variant_metadata)
             result.children = [normalize_url(child.url) for child in children]
             results.append(result)
 
             if result.kind == StreamKind.MASTER_PLAYLIST and depth < self.max_depth:
                 for child in children:
                     if normalize_url(child.url) not in visited:
-                        pending.append((child.url, result.final_url, depth + 1))
+                        pending.append(
+                            (child.url, result.final_url, depth + 1, child.variant_metadata)
+                        )
 
         return results
 
     def _inspect(
-        self, url: str, parent_url: str | None, depth: int
+        self,
+        url: str,
+        parent_url: str | None,
+        depth: int,
+        variant_metadata: VariantMetadata | None,
     ) -> tuple[DiscoveryResult, list[_Child]]:
         try:
             response = self._client.get(url, follow_redirects=True)
@@ -90,6 +98,7 @@ class StreamDiscovery:
                     http_status=None,
                     parent_url=parent_url,
                     depth=depth,
+                    variant_metadata=variant_metadata,
                     error=f"timeout: {exc}",
                 ),
                 [],
@@ -104,6 +113,7 @@ class StreamDiscovery:
                     http_status=None,
                     parent_url=parent_url,
                     depth=depth,
+                    variant_metadata=variant_metadata,
                     error=str(exc),
                 ),
                 [],
@@ -118,6 +128,7 @@ class StreamDiscovery:
                     http_status=None,
                     parent_url=parent_url,
                     depth=depth,
+                    variant_metadata=variant_metadata,
                     error=str(exc),
                 ),
                 [],
@@ -132,6 +143,7 @@ class StreamDiscovery:
                 http_status=response.status_code,
                 parent_url=parent_url,
                 depth=depth,
+                variant_metadata=variant_metadata,
                 error=f"HTTP {response.status_code}",
             )
             return result, []
@@ -139,7 +151,10 @@ class StreamDiscovery:
         children: list[_Child] = []
         if kind == StreamKind.MASTER_PLAYLIST:
             text = body.decode("utf-8-sig", errors="replace")
-            children = [_Child(url=item.url) for item in parse_master_playlist(text, final_url)]
+            children = [
+                _Child(url=item.url, variant_metadata=item.metadata)
+                for item in parse_master_playlist(text, final_url)
+            ]
 
         return (
             DiscoveryResult(
@@ -150,6 +165,7 @@ class StreamDiscovery:
                 http_status=response.status_code,
                 parent_url=parent_url,
                 depth=depth,
+                variant_metadata=variant_metadata,
             ),
             children,
         )
@@ -163,8 +179,9 @@ class StreamDiscovery:
 
 
 class _Child:
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, variant_metadata: VariantMetadata | None = None) -> None:
         self.url = url
+        self.variant_metadata = variant_metadata
 
 
 def iter_playable_results(results: list[DiscoveryResult]) -> Iterator[DiscoveryResult]:
