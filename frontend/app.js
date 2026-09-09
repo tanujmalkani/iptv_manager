@@ -54,7 +54,10 @@ function renderDetail(channel) {
   detail.hidden = false;
   const tested = channel.streams.filter((item) => item.performance.total_tests > 0);
   const successful = channel.streams.filter((item) => item.performance.successful_tests > 0);
-  const best = successful.length ? Math.min(...successful.map((item) => item.performance.median_first_frame_ms).filter((v) => v != null)) : null;
+  const startupValues = successful
+    .map((item) => item.performance.median_first_frame_ms)
+    .filter((value) => value != null);
+  const best = startupValues.length ? Math.min(...startupValues) : null;
 
   detail.innerHTML = `
     <div class="detail-header">
