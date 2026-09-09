@@ -71,7 +71,7 @@ def export_optimized_m3u(
         else:
             fallback_count += 1
 
-        output.extend(entry.directives)
+        output.extend(entry.original_directives or [])
         output.append(_render_extinf(entry))
         output.append(stream_url)
 
