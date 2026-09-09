@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import re
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
@@ -159,10 +159,7 @@ class PlaylistImporter:
             select(Channel).where(Channel.normalized_name == normalized_name)
         )
         if channel is None:
-            channel = Channel(
-                canonical_name=channel_name,
-                normalized_name=normalized_name,
-            )
+            channel = Channel(canonical_name=channel_name, normalized_name=normalized_name)
             session.add(channel)
             session.flush()
             result.new_channels += 1
@@ -183,9 +180,7 @@ class PlaylistImporter:
             root_stream = stream_map.get(normalize_url(root_results[0].final_url))
 
         if root_stream is None:
-            root_stream = self._get_or_create_stream(
-                session, root_url, StreamKind.UNKNOWN
-            )
+            root_stream = self._get_or_create_stream(session, root_url, StreamKind.UNKNOWN)
             self._add_channel_stream(session, channel, root_stream)
             result.warnings.append(f"No discovery result for entry URL: {entry.url}")
 
@@ -222,14 +217,9 @@ class PlaylistImporter:
         kind: StreamKind,
     ) -> Stream:
         normalized = normalize_url(url)
-        stream = session.scalar(
-            select(Stream).where(Stream.normalized_url == normalized)
-        )
+        stream = session.scalar(select(Stream).where(Stream.normalized_url == normalized))
         if stream is not None:
-            if (
-                stream.stream_kind == StreamKind.UNKNOWN.value
-                and kind != StreamKind.UNKNOWN
-            ):
+            if stream.stream_kind == StreamKind.UNKNOWN.value and kind != StreamKind.UNKNOWN:
                 stream.stream_kind = kind.value
             return stream
 
@@ -301,8 +291,7 @@ class PlaylistImporter:
         entry: M3UEntry,
     ) -> None:
         values = {
-            ChannelOptionType.NAME.value: entry.name
-            or entry.attributes.get("tvg-name"),
+            ChannelOptionType.NAME.value: entry.name or entry.attributes.get("tvg-name"),
             ChannelOptionType.LOGO.value: entry.attributes.get("tvg-logo"),
             ChannelOptionType.EPG_ID.value: entry.attributes.get("tvg-id"),
             ChannelOptionType.EPG_NAME.value: entry.attributes.get("tvg-name"),
