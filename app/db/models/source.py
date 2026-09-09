@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, utcnow
 from .enums import VersionStatus
+
+if TYPE_CHECKING:
+    from .playlist import PlaylistEntry
 
 
 class SourcePlaylist(Base):
@@ -19,7 +25,7 @@ class SourcePlaylist(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     entry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    versions: Mapped[list["SourcePlaylistVersion"]] = relationship(
+    versions: Mapped[list[SourcePlaylistVersion]] = relationship(
         back_populates="source_playlist", cascade="all, delete-orphan"
     )
 
@@ -32,16 +38,20 @@ class SourcePlaylistVersion(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source_playlist_id: Mapped[int] = mapped_column(ForeignKey("source_playlists.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("source_playlists.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     entry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     raw_content_path: Mapped[str | None] = mapped_column(Text)
     original_header: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), default=VersionStatus.IMPORTING.value, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default=VersionStatus.IMPORTING.value, nullable=False
+    )
 
-    source_playlist: Mapped["SourcePlaylist"] = relationship(back_populates="versions")
-    entries: Mapped[list["PlaylistEntry"]] = relationship(
+    source_playlist: Mapped[SourcePlaylist] = relationship(back_populates="versions")
+    entries: Mapped[list[PlaylistEntry]] = relationship(
         back_populates="source_playlist_version", cascade="all, delete-orphan"
     )
