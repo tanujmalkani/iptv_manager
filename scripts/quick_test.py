@@ -1,6 +1,9 @@
 import argparse
 
+from sqlalchemy import select
+
 from app.config import get_settings
+from app.db.models import StreamTest
 from app.db.session import SessionLocal
 from app.testing import QuickTestEngine, QuickTestRunner
 
@@ -40,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _format_ms(value: float | None) -> str:
+    return f"{value:.1f} ms" if value is not None else "-"
+
+
 def main() -> int:
     args = build_parser().parse_args()
     runner = QuickTestRunner(
@@ -53,6 +60,11 @@ def main() -> int:
             source_playlist_id=args.source_playlist_id,
             stream_ids=args.stream_ids,
         )
+        stream_tests = session.scalars(
+            select(StreamTest)
+            .where(StreamTest.test_run_id == test_run.id)
+            .order_by(StreamTest.stream_id, StreamTest.attempt_number)
+        ).all()
 
     print(f"Quick test run: {test_run.id}")
     print(f"Status: {test_run.status}")
@@ -60,6 +72,24 @@ def main() -> int:
     print(f"Completed: {test_run.completed_streams}")
     print(f"Successful: {test_run.successful_streams}")
     print(f"Failed: {test_run.failed_streams}")
+
+    if stream_tests:
+        print("\nResults:")
+        for stream_test in stream_tests:
+            print(f"\nStream {stream_test.stream_id}")
+            print(f"  Result:        {stream_test.result}")
+            print(f"  Available:     {'yes' if stream_test.available else 'no'}")
+            print(f"  DNS:            {_format_ms(stream_test.dns_ms)}")
+            print(f"  Connect:        {_format_ms(stream_test.connect_ms)}")
+            print(f"  TLS:            {_format_ms(stream_test.tls_ms)}")
+            print(f"  HTTP response:  {_format_ms(stream_test.http_response_ms)}")
+            print(f"  First data:     {_format_ms(stream_test.first_data_ms)}")
+            print(f"  First frame:    {_format_ms(stream_test.first_frame_ms)}")
+            print(f"  Duration:       {_format_ms(stream_test.test_duration_ms)}")
+            if not stream_test.available:
+                print(f"  Error stage:    {stream_test.error_stage or '-'}")
+                print(f"  Error type:     {stream_test.error_type or '-'}")
+
     return 0
 
 
