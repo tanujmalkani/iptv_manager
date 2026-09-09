@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,20 +17,24 @@ from app.performance.aggregation import aggregate_stream_tests
 from app.performance.channels import get_channel_performance, get_channels_performance
 
 router = APIRouter(prefix="/api", tags=["performance"])
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.get("/channels", response_model=list[ChannelSummaryResponse])
 def list_channels_performance(
-    session: Session = Depends(get_db),
+    session: DbSession,
 ) -> list[ChannelSummaryResponse]:
     """List channels with their current performance summary."""
-    return [ChannelSummaryResponse.from_model(item) for item in get_channels_performance(session)]
+    return [
+        ChannelSummaryResponse.from_model(item)
+        for item in get_channels_performance(session)
+    ]
 
 
 @router.get("/channels/{channel_id}", response_model=ChannelPerformanceResponse)
 def get_channel_performance_endpoint(
     channel_id: int,
-    session: Session = Depends(get_db),
+    session: DbSession,
 ) -> ChannelPerformanceResponse:
     """Return all playable streams for a channel, ranked by historical performance."""
     performance = get_channel_performance(session, channel_id)
@@ -37,10 +43,13 @@ def get_channel_performance_endpoint(
     return ChannelPerformanceResponse.from_model(performance)
 
 
-@router.get("/streams/{stream_id}/performance", response_model=StreamPerformanceResponse)
+@router.get(
+    "/streams/{stream_id}/performance",
+    response_model=StreamPerformanceResponse,
+)
 def get_stream_performance_endpoint(
     stream_id: int,
-    session: Session = Depends(get_db),
+    session: DbSession,
 ) -> StreamPerformanceResponse:
     """Return aggregated historical performance for one stream."""
     stream = session.get(Stream, stream_id)
