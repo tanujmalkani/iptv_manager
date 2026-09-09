@@ -22,7 +22,9 @@ class SourcePlaylist(Base):
     source_location: Mapped[str | None] = mapped_column(Text)
     original_filename: Mapped[str | None] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
     entry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     versions: Mapped[list[SourcePlaylistVersion]] = relationship(
@@ -33,8 +35,12 @@ class SourcePlaylist(Base):
 class SourcePlaylistVersion(Base):
     __tablename__ = "source_playlist_versions"
     __table_args__ = (
-        UniqueConstraint("source_playlist_id", "version_number", name="uq_playlist_version_number"),
-        UniqueConstraint("source_playlist_id", "content_hash", name="uq_playlist_content_hash"),
+        UniqueConstraint(
+            "source_playlist_id", "version_number", name="uq_playlist_version_number"
+        ),
+        UniqueConstraint(
+            "source_playlist_id", "content_hash", name="uq_playlist_content_hash"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
