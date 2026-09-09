@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPTV Manager</title>
+  <link rel="stylesheet" href="/frontend/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div>
+        <h1>IPTV Manager</h1>
+        <p>Fast-zap stream performance dashboard</p>
+      </div>
+      <button id="refresh">Refresh</button>
+    </header>
+
+    <section id="status" class="status">Loading channels…</section>
+    <section class="layout">
+      <aside class="panel">
+        <div class="panel-title">
+          <h2>Channels</h2>
+          <input id="filter" type="search" placeholder="Filter channels…" autocomplete="off">
+        </div>
+        <div id="channels" class="channel-list"></div>
+      </aside>
+
+      <section class="panel detail">
+        <div id="empty" class="empty">Select a channel to inspect its stream rankings.</div>
+        <div id="channel-detail" hidden></div>
+      </section>
+    </section>
+  </main>
+  <script src="/frontend/app.js"></script>
+</body>
+</html>
