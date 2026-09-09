@@ -4,6 +4,7 @@ import re
 import subprocess
 import threading
 import time
+from typing import cast
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
@@ -48,7 +49,7 @@ class StreamTestEngine(QuickTestEngine):
             result.bytes_received = network.bytes_received
 
         playback = self._test_playback(url)
-        result.first_frame_ms = playback["first_frame_ms"]
+        result.first_frame_ms = cast(float | None, playback["first_frame_ms"])
         result.extra_metrics = {
             "playback_duration_seconds": self.playback_duration_seconds,
             "playback_duration_ms": playback["playback_duration_ms"],
@@ -65,8 +66,8 @@ class StreamTestEngine(QuickTestEngine):
             result.available = True
         else:
             result.error_stage = "playback"
-            result.error_type = playback["error_type"]
-            result.error_message = playback["error_message"]
+            result.error_type = cast(ErrorType, playback["error_type"])
+            result.error_message = cast(str | None, playback["error_message"])
         result.test_duration_ms = (time.monotonic() - started) * 1000.0
         return result
 
@@ -245,9 +246,10 @@ class StreamTestRunner(QuickTestRunner):
             source_playlist_id=source_playlist_id,
             stream_ids=stream_ids,
         )
+        engine = cast(StreamTestEngine, self.engine)
         test_run.configuration_json = {
             **test_run.configuration_json,
-            "playback_duration_seconds": self.engine.playback_duration_seconds,
+            "playback_duration_seconds": engine.playback_duration_seconds,
         }
         session.commit()
         return test_run
