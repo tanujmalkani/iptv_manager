@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -59,7 +60,11 @@ def parse_master_playlist(text: str, base_url: str) -> list[HLSVariant]:
             continue
         attributes = _parse_attributes(line.split(":", 1)[1])
         uri = next(
-            (candidate for candidate in lines[index + 1 :] if candidate and not candidate.startswith("#")),
+            (
+                candidate
+                for candidate in lines[index + 1 :]
+                if candidate and not candidate.startswith("#")
+            ),
             None,
         )
         if uri is None:
@@ -70,10 +75,8 @@ def parse_master_playlist(text: str, base_url: str) -> list[HLSVariant]:
         height: int | None = None
         if "x" in resolution.lower():
             width_text, height_text = resolution.lower().split("x", 1)
-            try:
+            with suppress(ValueError):
                 width, height = int(width_text), int(height_text)
-            except ValueError:
-                pass
 
         metadata = VariantMetadata(
             bandwidth=_int_attribute(attributes, "BANDWIDTH"),
