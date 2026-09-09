@@ -53,30 +53,67 @@ video/360/index.m3u8
     assert variants[0].metadata.codecs == "avc1.4d401f,mp4a.40.2"
 
 
+class FakeStreamResponse:
+    def __init__(
+        self,
+        url: str,
+        content: bytes,
+        *,
+        status_code: int = 200,
+        content_type: str = "application/vnd.apple.mpegurl",
+        chunks: list[bytes] | None = None,
+    ) -> None:
+        self.url = httpx.URL(url)
+        self.status_code = status_code
+        self.headers = {"content-type": content_type}
+        self._content = content
+        self._chunks = chunks
+
+    def __enter__(self) -> FakeStreamResponse:
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        return None
+
+    def iter_bytes(self):
+        if self._chunks is not None:
+            yield from self._chunks
+        else:
+            yield self._content
+
+
+class FakeClient:
+    def __init__(self, responses: dict[str, FakeStreamResponse]) -> None:
+        self.responses = responses
+        self.calls: list[str] = []
+
+    def stream(self, method: str, url: str, *, follow_redirects: bool = True) -> FakeStreamResponse:
+        assert method == "GET"
+        assert follow_redirects is True
+        self.calls.append(url)
+        return self.responses[url]
+
+    def close(self) -> None:
+        return None
+
+
 def test_recursive_master_discovery() -> None:
     responses = {
-        "https://example.test/master.m3u8": httpx.Response(
-            200,
-            headers={"content-type": "application/vnd.apple.mpegurl"},
-            content=(
+        "https://example.test/master.m3u8": FakeStreamResponse(
+            "https://example.test/master.m3u8",
+            (
                 b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000,RESOLUTION=640x360\n"
                 b"variant.m3u8\n"
             ),
-            request=httpx.Request("GET", "https://example.test/master.m3u8"),
         ),
-        "https://example.test/variant.m3u8": httpx.Response(
-            200,
-            headers={"content-type": "application/vnd.apple.mpegurl"},
-            content=b"#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n",
-            request=httpx.Request("GET", "https://example.test/variant.m3u8"),
+        "https://example.test/variant.m3u8": FakeStreamResponse(
+            "https://example.test/variant.m3u8",
+            b"#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n",
         ),
     }
+    client = FakeClient(responses)
 
-    class FakeClient:
-        def get(self, url: str, follow_redirects: bool = True) -> httpx.Response:
-            return responses[url]
-
-    with StreamDiscovery(client=FakeClient()) as discovery:  # type: ignore[arg-type]
+    with StreamDiscovery(client=client) as discovery:
         results = discovery.discover("https://example.test/master.m3u8")
 
     assert [result.kind for result in results] == [
@@ -84,3 +121,77 @@ def test_recursive_master_discovery() -> None:
         StreamKind.MEDIA_PLAYLIST,
     ]
     assert results[1].parent_url == "https://example.test/master.m3u8"
+    assert results[1].variant_metadata is not None
+    assert results[1].variant_metadata.width == 640
+    assert client.calls == [
+        "https://example.test/master.m3u8",
+        "https://example.test/variant.m3u8",
+    ]
+
+
+def test_recursive_discovery_deduplicates_urls() -> None:
+    responses = {
+        "https://example.test/master.m3u8": FakeStreamResponse(
+            "https://example.test/master.m3u8",
+            b"#EXTM3U\n"
+            b"#EXT-X-STREAM-INF:BANDWIDTH=100000\nvariant.m3u8\n"
+            b"#EXT-X-STREAM-INF:BANDWIDTH=200000\nvariant.m3u8\n",
+        ),
+        "https://example.test/variant.m3u8": FakeStreamResponse(
+            "https://example.test/variant.m3u8",
+            b"#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n",
+        ),
+    }
+    client = FakeClient(responses)
+
+    with StreamDiscovery(client=client) as discovery:
+        results = discovery.discover("https://example.test/master.m3u8")
+
+    assert len(results) == 2
+    assert client.calls.count("https://example.test/variant.m3u8") == 1
+
+
+def test_discovery_enforces_max_response_bytes() -> None:
+    response = FakeStreamResponse(
+        "https://example.test/master.m3u8",
+        b"abcdef",
+        chunks=[b"abc", b"def"],
+    )
+    client = FakeClient({"https://example.test/master.m3u8": response})
+
+    with StreamDiscovery(client=client, max_response_bytes=5) as discovery:
+        results = discovery.discover("https://example.test/master.m3u8")
+
+    assert len(results) == 1
+    assert results[0].kind == StreamKind.UNKNOWN
+    assert results[0].error == "response exceeds maximum size of 5 bytes"
+
+
+def test_discovery_stops_recursion_at_max_depth() -> None:
+    responses = {
+        "https://example.test/root.m3u8": FakeStreamResponse(
+            "https://example.test/root.m3u8",
+            b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nlevel1.m3u8\n",
+        ),
+        "https://example.test/level1.m3u8": FakeStreamResponse(
+            "https://example.test/level1.m3u8",
+            b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nlevel2.m3u8\n",
+        ),
+        "https://example.test/level2.m3u8": FakeStreamResponse(
+            "https://example.test/level2.m3u8",
+            b"#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\nsegment.ts\n",
+        ),
+    }
+    client = FakeClient(responses)
+
+    with StreamDiscovery(client=client, max_depth=1) as discovery:
+        results = discovery.discover("https://example.test/root.m3u8")
+
+    assert [result.url for result in results] == [
+        "https://example.test/root.m3u8",
+        "https://example.test/level1.m3u8",
+    ]
+    assert client.calls == [
+        "https://example.test/root.m3u8",
+        "https://example.test/level1.m3u8",
+    ]
