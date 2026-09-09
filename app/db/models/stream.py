@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, utcnow
+
+if TYPE_CHECKING:
+    from .channel import Channel
+    from .playlist import PlaylistEntry
+    from .testing import StreamTest
 
 
 class Stream(Base):
@@ -18,34 +26,60 @@ class Stream(Base):
     path: Mapped[str | None] = mapped_column(Text)
     stream_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
 
-    channels: Mapped[list["ChannelStream"]] = relationship(back_populates="stream", cascade="all, delete-orphan")
-    variants_as_parent: Mapped[list["StreamVariant"]] = relationship(foreign_keys="StreamVariant.parent_stream_id", back_populates="parent_stream", cascade="all, delete-orphan")
-    variants_as_child: Mapped[list["StreamVariant"]] = relationship(foreign_keys="StreamVariant.variant_stream_id", back_populates="variant_stream", cascade="all, delete-orphan")
-    entries: Mapped[list["PlaylistEntry"]] = relationship(back_populates="stream")
-    tests: Mapped[list["StreamTest"]] = relationship(back_populates="stream", cascade="all, delete-orphan")
+    channels: Mapped[list[ChannelStream]] = relationship(
+        back_populates="stream", cascade="all, delete-orphan"
+    )
+    variants_as_parent: Mapped[list[StreamVariant]] = relationship(
+        foreign_keys="StreamVariant.parent_stream_id",
+        back_populates="parent_stream",
+        cascade="all, delete-orphan",
+    )
+    variants_as_child: Mapped[list[StreamVariant]] = relationship(
+        foreign_keys="StreamVariant.variant_stream_id",
+        back_populates="variant_stream",
+        cascade="all, delete-orphan",
+    )
+    entries: Mapped[list[PlaylistEntry]] = relationship(back_populates="stream")
+    tests: Mapped[list[StreamTest]] = relationship(
+        back_populates="stream", cascade="all, delete-orphan"
+    )
 
 
 class ChannelStream(Base):
     __tablename__ = "channel_streams"
 
-    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id", ondelete="CASCADE"), primary_key=True)
-    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id", ondelete="CASCADE"), primary_key=True)
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channels.id", ondelete="CASCADE"), primary_key=True
+    )
+    stream_id: Mapped[int] = mapped_column(
+        ForeignKey("streams.id", ondelete="CASCADE"), primary_key=True
+    )
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
 
-    channel: Mapped["Channel"] = relationship(back_populates="streams")
-    stream: Mapped["Stream"] = relationship(back_populates="channels")
+    channel: Mapped[Channel] = relationship(back_populates="streams")
+    stream: Mapped[Stream] = relationship(back_populates="channels")
 
 
 class StreamVariant(Base):
     __tablename__ = "stream_variants"
-    __table_args__ = (UniqueConstraint("parent_stream_id", "variant_stream_id", name="uq_stream_variant"),)
+    __table_args__ = (
+        UniqueConstraint("parent_stream_id", "variant_stream_id", name="uq_stream_variant"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    parent_stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id", ondelete="CASCADE"), nullable=False, index=True)
-    variant_stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_stream_id: Mapped[int] = mapped_column(
+        ForeignKey("streams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    variant_stream_id: Mapped[int] = mapped_column(
+        ForeignKey("streams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     bandwidth: Mapped[int | None] = mapped_column(Integer)
     average_bandwidth: Mapped[int | None] = mapped_column(Integer)
     resolution_width: Mapped[int | None] = mapped_column(Integer)
@@ -54,5 +88,9 @@ class StreamVariant(Base):
     codecs: Mapped[str | None] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
-    parent_stream: Mapped["Stream"] = relationship(foreign_keys=[parent_stream_id], back_populates="variants_as_parent")
-    variant_stream: Mapped["Stream"] = relationship(foreign_keys=[variant_stream_id], back_populates="variants_as_child")
+    parent_stream: Mapped[Stream] = relationship(
+        foreign_keys=[parent_stream_id], back_populates="variants_as_parent"
+    )
+    variant_stream: Mapped[Stream] = relationship(
+        foreign_keys=[variant_stream_id], back_populates="variants_as_child"
+    )
