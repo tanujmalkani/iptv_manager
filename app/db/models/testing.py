@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 
 class TestRun(Base):
+    __test__ = False
     __tablename__ = "test_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
