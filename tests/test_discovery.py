@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import httpx
 
 from app.db.models.enums import StreamKind
@@ -87,7 +89,9 @@ class FakeClient:
         self.responses = responses
         self.calls: list[str] = []
 
-    def stream(self, method: str, url: str, *, follow_redirects: bool = True) -> FakeStreamResponse:
+    def stream(
+        self, method: str, url: str, *, follow_redirects: bool = True
+    ) -> FakeStreamResponse:
         assert method == "GET"
         assert follow_redirects is True
         self.calls.append(url)
