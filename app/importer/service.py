@@ -19,7 +19,7 @@ from app.db.models import (
     StreamVariant,
 )
 from app.db.models.enums import ChannelOptionType, SourceType, StreamKind, VersionStatus
-from app.discovery.models import VariantMetadata
+from app.discovery.models import DiscoveryResult, VariantMetadata
 from app.discovery.service import StreamDiscovery
 from app.discovery.url import normalize_url
 from app.m3u.parser import M3UEntry, parse_m3u
@@ -52,10 +52,16 @@ class PlaylistImporter:
         name: str,
         text: str,
         source_location: str | None = None,
+        source_type: SourceType | None = None,
     ) -> ImportResult:
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         playlist = parse_m3u(text)
-        source = self._get_or_create_source(session, name, source_location)
+        source = self._get_or_create_source(
+            session,
+            name,
+            source_location,
+            source_type or (SourceType.URL if source_location else SourceType.TEXT),
+        )
 
         existing = session.scalar(
             select(SourcePlaylistVersion).where(
@@ -96,28 +102,35 @@ class PlaylistImporter:
         )
 
         try:
+            seen_entry_urls: set[str] = set()
             for entry in playlist.entries:
+                normalized_entry_url = normalize_url(entry.url)
+                if normalized_entry_url in seen_entry_urls:
+                    result.duplicate_urls += 1
+                seen_entry_urls.add(normalized_entry_url)
                 self._import_entry(session, version, source, entry, result)
+
             version.status = VersionStatus.COMPLETED.value
             source.entry_count = len(playlist.entries)
             session.commit()
         except Exception:
             session.rollback()
-            version.status = VersionStatus.FAILED.value
-            session.commit()
             raise
 
-        result.channels = self._count_channels(session, version)
-        result.unique_streams = self._count_streams(session, version)
+        result.channels = self._count_channels(session, version.id)
+        result.unique_streams = self._count_streams(session, version.id)
         return result
 
     def _get_or_create_source(
-        self, session: Session, name: str, source_location: str | None
+        self,
+        session: Session,
+        name: str,
+        source_location: str | None,
+        source_type: SourceType,
     ) -> SourcePlaylist:
-        source_type = SourceType.URL.value if source_location else SourceType.TEXT.value
         source = session.scalar(
             select(SourcePlaylist).where(
-                SourcePlaylist.source_type == source_type,
+                SourcePlaylist.source_type == source_type.value,
                 SourcePlaylist.source_location == source_location,
                 SourcePlaylist.name == name,
             )
@@ -125,7 +138,7 @@ class PlaylistImporter:
         if source is None:
             source = SourcePlaylist(
                 name=name,
-                source_type=source_type,
+                source_type=source_type.value,
                 source_location=source_location,
             )
             session.add(source)
@@ -146,7 +159,10 @@ class PlaylistImporter:
             select(Channel).where(Channel.normalized_name == normalized_name)
         )
         if channel is None:
-            channel = Channel(canonical_name=channel_name, normalized_name=normalized_name)
+            channel = Channel(
+                canonical_name=channel_name,
+                normalized_name=normalized_name,
+            )
             session.add(channel)
             session.flush()
             result.new_channels += 1
@@ -158,15 +174,18 @@ class PlaylistImporter:
         for discovered in root_results:
             stream_url = normalize_url(discovered.final_url or discovered.url)
             stream = self._get_or_create_stream(session, stream_url, discovered.kind)
-            stream_map[normalize_url(stream.normalized_url)] = stream
+            stream_map[stream_url] = stream
             self._add_channel_stream(session, channel, stream)
             result.discovered_streams += 1
 
         root_stream = stream_map.get(root_url)
         if root_stream is None and root_results:
             root_stream = stream_map.get(normalize_url(root_results[0].final_url))
+
         if root_stream is None:
-            root_stream = self._get_or_create_stream(session, root_url, StreamKind.UNKNOWN)
+            root_stream = self._get_or_create_stream(
+                session, root_url, StreamKind.UNKNOWN
+            )
             self._add_channel_stream(session, channel, root_stream)
             result.warnings.append(f"No discovery result for entry URL: {entry.url}")
 
@@ -186,22 +205,31 @@ class PlaylistImporter:
         )
         session.add(playlist_entry)
         session.flush()
+
         self._add_channel_options(session, channel, source, playlist_entry, entry)
         self._add_variants(session, root_results, stream_map)
 
-    def _discover(self, url: str):
+    def _discover(self, url: str) -> list[DiscoveryResult]:
         if self.discovery is not None:
             return self.discovery.discover(url)
         with StreamDiscovery() as discovery:
             return discovery.discover(url)
 
     def _get_or_create_stream(
-        self, session: Session, url: str, kind: StreamKind
+        self,
+        session: Session,
+        url: str,
+        kind: StreamKind,
     ) -> Stream:
         normalized = normalize_url(url)
-        stream = session.scalar(select(Stream).where(Stream.normalized_url == normalized))
+        stream = session.scalar(
+            select(Stream).where(Stream.normalized_url == normalized)
+        )
         if stream is not None:
-            if stream.stream_kind == StreamKind.UNKNOWN.value and kind != StreamKind.UNKNOWN:
+            if (
+                stream.stream_kind == StreamKind.UNKNOWN.value
+                and kind != StreamKind.UNKNOWN
+            ):
                 stream.stream_kind = kind.value
             return stream
 
@@ -219,23 +247,30 @@ class PlaylistImporter:
         session.flush()
         return stream
 
-    def _add_channel_stream(self, session: Session, channel: Channel, stream: Stream) -> None:
+    def _add_channel_stream(
+        self,
+        session: Session,
+        channel: Channel,
+        stream: Stream,
+    ) -> None:
         if session.get(ChannelStream, (channel.id, stream.id)) is None:
             session.add(ChannelStream(channel=channel, stream=stream))
 
     def _add_variants(
         self,
         session: Session,
-        results: list,
+        results: list[DiscoveryResult],
         stream_map: dict[str, Stream],
     ) -> None:
         for result_item in results:
             if result_item.parent_url is None or result_item.variant_metadata is None:
                 continue
+
             parent = stream_map.get(normalize_url(result_item.parent_url))
             child = stream_map.get(normalize_url(result_item.final_url))
             if parent is None or child is None:
                 continue
+
             metadata: VariantMetadata = result_item.variant_metadata
             exists = session.scalar(
                 select(StreamVariant).where(
@@ -266,15 +301,18 @@ class PlaylistImporter:
         entry: M3UEntry,
     ) -> None:
         values = {
-            ChannelOptionType.NAME.value: entry.name or entry.attributes.get("tvg-name"),
+            ChannelOptionType.NAME.value: entry.name
+            or entry.attributes.get("tvg-name"),
             ChannelOptionType.LOGO.value: entry.attributes.get("tvg-logo"),
             ChannelOptionType.EPG_ID.value: entry.attributes.get("tvg-id"),
             ChannelOptionType.EPG_NAME.value: entry.attributes.get("tvg-name"),
             ChannelOptionType.GROUP.value: entry.attributes.get("group-title"),
         }
+
         for option_type, value in values.items():
             if not value:
                 continue
+
             exists = session.scalar(
                 select(ChannelOption).where(
                     ChannelOption.channel_id == channel.id,
@@ -294,20 +332,26 @@ class PlaylistImporter:
                 )
 
     @staticmethod
-    def _count_channels(session: Session, version: SourcePlaylistVersion) -> int:
-        return session.scalar(
-            select(func.count(func.distinct(PlaylistEntry.channel_id))).where(
-                PlaylistEntry.source_playlist_version_id == version.id
+    def _count_channels(session: Session, version_id: int) -> int:
+        return (
+            session.scalar(
+                select(func.count(func.distinct(PlaylistEntry.channel_id))).where(
+                    PlaylistEntry.source_playlist_version_id == version_id
+                )
             )
-        ) or 0
+            or 0
+        )
 
     @staticmethod
-    def _count_streams(session: Session, version: SourcePlaylistVersion) -> int:
-        return session.scalar(
-            select(func.count(func.distinct(PlaylistEntry.stream_id))).where(
-                PlaylistEntry.source_playlist_version_id == version.id
+    def _count_streams(session: Session, version_id: int) -> int:
+        return (
+            session.scalar(
+                select(func.count(func.distinct(PlaylistEntry.stream_id))).where(
+                    PlaylistEntry.source_playlist_version_id == version_id
+                )
             )
-        ) or 0
+            or 0
+        )
 
 
 def normalize_channel_name(value: str) -> str:
