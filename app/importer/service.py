@@ -103,12 +103,20 @@ class PlaylistImporter:
 
         try:
             seen_entry_urls: set[str] = set()
+            discovery_cache: dict[str, list[DiscoveryResult]] = {}
             for entry in playlist.entries:
                 normalized_entry_url = normalize_url(entry.url)
                 if normalized_entry_url in seen_entry_urls:
                     result.duplicate_urls += 1
                 seen_entry_urls.add(normalized_entry_url)
-                self._import_entry(session, version, source, entry, result)
+                self._import_entry(
+                    session,
+                    version,
+                    source,
+                    entry,
+                    result,
+                    discovery_cache,
+                )
 
             version.status = VersionStatus.COMPLETED.value
             source.entry_count = len(playlist.entries)
@@ -152,6 +160,7 @@ class PlaylistImporter:
         source: SourcePlaylist,
         entry: M3UEntry,
         result: ImportResult,
+        discovery_cache: dict[str, list[DiscoveryResult]],
     ) -> None:
         channel_name = entry.name or entry.attributes.get("tvg-name") or entry.url
         normalized_name = normalize_channel_name(channel_name)
@@ -165,7 +174,7 @@ class PlaylistImporter:
             result.new_channels += 1
 
         root_url = normalize_url(entry.url)
-        root_results = self._discover(root_url)
+        root_results = self._discover(root_url, discovery_cache)
         stream_map: dict[str, Stream] = {}
 
         for discovered in root_results:
@@ -204,11 +213,27 @@ class PlaylistImporter:
         self._add_channel_options(session, channel, source, playlist_entry, entry)
         self._add_variants(session, root_results, stream_map)
 
-    def _discover(self, url: str) -> list[DiscoveryResult]:
+    def _discover(
+        self,
+        url: str,
+        discovery_cache: dict[str, list[DiscoveryResult]],
+    ) -> list[DiscoveryResult]:
+        normalized_url = normalize_url(url)
+        cached = discovery_cache.get(normalized_url)
+        if cached is not None:
+            return cached
+
         if self.discovery is not None:
-            return self.discovery.discover(url)
-        with StreamDiscovery() as discovery:
-            return discovery.discover(url)
+            results = self.discovery.discover(normalized_url)
+        else:
+            with StreamDiscovery() as discovery:
+                results = discovery.discover(normalized_url)
+
+        for result in results:
+            discovery_cache[normalize_url(result.url)] = results
+            discovery_cache[normalize_url(result.final_url)] = results
+        discovery_cache[normalized_url] = results
+        return results
 
     def _get_or_create_stream(
         self,
