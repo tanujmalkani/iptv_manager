@@ -47,10 +47,36 @@ def test_preserve_directives_and_tolerate_bare_urls() -> None:
     assert playlist.entries[1].name == "Second"
 
 
-def test_reject_invalid_header() -> None:
+def test_tolerate_missing_header_and_bom() -> None:
+    playlist = parse_m3u(
+        "\ufeff#EXTINF:-1 tvg-name=News, News Channel\n"
+        "https://example.test/news.m3u8\n"
+    )
+
+    assert playlist.header == "#EXTM3U"
+    assert len(playlist.entries) == 1
+    assert playlist.entries[0].name == "News Channel"
+    assert playlist.entries[0].url == "https://example.test/news.m3u8"
+
+
+def test_tolerate_malformed_duration_and_preserve_directive() -> None:
+    playlist = parse_m3u(
+        "#EXTM3U\n#KODIPROP:inputstream=inputstream.adaptive\n"
+        "#EXTINF:not-a-number tvg-id=abc,Channel\n"
+        "https://example.test/live?token=a%20b\n"
+    )
+
+    entry = playlist.entries[0]
+    assert entry.duration is None
+    assert entry.attributes["tvg-id"] == "abc"
+    assert entry.directives == ["#KODIPROP:inputstream=inputstream.adaptive"]
+    assert entry.url == "https://example.test/live?token=a%20b"
+
+
+def test_empty_playlist_rejected() -> None:
     try:
-        parse_m3u("not an m3u")
+        parse_m3u("\n   \n")
     except ValueError as exc:
-        assert "EXTM3U" in str(exc)
+        assert "empty" in str(exc).lower()
     else:
         raise AssertionError("Expected ValueError")
