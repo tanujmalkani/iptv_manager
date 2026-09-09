@@ -48,7 +48,10 @@ def parse_m3u(text: str) -> M3UPlaylist:
     if not raw_lines:
         raise ValueError("Playlist is empty")
 
-    lines = [line.lstrip("\ufeff", 1) if index == 0 else line for index, line in enumerate(raw_lines)]
+    lines = [
+        line[1:] if index == 0 and line.startswith("\ufeff") else line
+        for index, line in enumerate(raw_lines)
+    ]
     first_content_index = next(
         (index for index, line in enumerate(lines) if line.strip()),
         None,
