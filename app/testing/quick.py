@@ -471,7 +471,7 @@ class QuickTestRunner:
             statement = statement.where(Stream.id.in_(stream_ids))
         if source_playlist_id is not None:
             statement = (
-                statement.join(PlaylistEntry, PlaylistEntry.stream_id == Stream.id)
+                statement.join(PlaylistEntry, PlaylistEntry.channel_id == ChannelStream.channel_id)
                 .join(
                     SourcePlaylistVersion,
                     SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id,
