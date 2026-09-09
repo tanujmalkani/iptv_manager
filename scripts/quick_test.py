@@ -27,7 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout",
         type=float,
         default=settings.quick_test_timeout_seconds,
-        help=f"Overall timeout per stream in seconds (default: {settings.quick_test_timeout_seconds}).",
+        help=(
+            "Overall timeout per stream in seconds "
+            f"(default: {settings.quick_test_timeout_seconds})."
+        ),
     )
     parser.add_argument(
         "--ffmpeg",
