@@ -40,6 +40,25 @@ class FakeDiscovery:
         ]
 
 
+class CountingDiscovery:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def discover(self, url: str) -> list[DiscoveryResult]:
+        self.calls.append(url)
+        return [
+            DiscoveryResult(
+                url=url,
+                final_url=url,
+                kind=StreamKind.MEDIA_PLAYLIST,
+                content_type="application/vnd.apple.mpegurl",
+                http_status=200,
+                parent_url=None,
+                depth=0,
+            )
+        ]
+
+
 def make_session() -> Session:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -96,3 +115,22 @@ def test_import_same_content_creates_no_second_version() -> None:
     assert second.version_number == 1
     assert second.identical_version is True
     assert len(session.scalars(select(PlaylistEntry)).all()) == 1
+
+
+def test_import_deduplicates_discovery_for_repeated_url() -> None:
+    session = make_session()
+    discovery = CountingDiscovery()
+    playlist = (
+        "#EXTM3U\n"
+        "#EXTINF:-1,Channel One\nhttps://example.test/live.m3u8\n"
+        "#EXTINF:-1,Channel Two\nhttps://EXAMPLE.test:443/live.m3u8\n"
+    )
+
+    result = PlaylistImporter(discovery=discovery).import_text(
+        session, "Test Playlist", playlist
+    )
+
+    assert result.entries == 2
+    assert result.duplicate_urls == 1
+    assert discovery.calls == ["https://example.test/live.m3u8"]
+    assert len(session.scalars(select(Stream)).all()) == 1
