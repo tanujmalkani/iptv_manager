@@ -13,10 +13,16 @@
         <h1>IPTV Manager</h1>
         <p>Fast-zap stream performance dashboard</p>
       </div>
-      <button id="refresh">Refresh</button>
+      <div class="actions">
+        <select id="playlist" aria-label="Source playlist">
+          <option value="">Select playlist…</option>
+        </select>
+        <button id="export" disabled>Export optimized M3U</button>
+        <button id="refresh">Refresh</button>
+      </div>
     </header>
 
-    <section id="status" class="status">Loading channels…</section>
+    <section id="status" class="status">Loading playlists…</section>
     <section class="layout">
       <aside class="panel">
         <div class="panel-title">
