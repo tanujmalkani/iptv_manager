@@ -1,4 +1,4 @@
-const state = { channels: [], selectedId: null, playlists: [], playlistId: null, testRunId: null, polling: false };
+const state = { channels: [], selectedId: null, playlists: [], playlistId: null, testRunId: null, polling: false, testType: null };
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,6 +25,7 @@ function renderPlaylists() {
   const playlist = selectedPlaylist();
   const ready = playlist?.latest_version_id != null;
   $("test").disabled = !ready || state.polling;
+  $("deep-test").disabled = !ready || state.polling;
   $("export").disabled = !ready || state.polling;
   $("playlist-summary").textContent = playlist
     ? `${playlist.entry_count} source entries · latest ${playlist.latest_version_number == null ? "—" : `v${playlist.latest_version_number}`}`
@@ -129,9 +130,10 @@ function renderTestProgress(run) {
   const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 0;
   $("test-progress-count").textContent = `${completed} / ${total}`;
   $("test-progress-bar").style.width = `${percent}%`;
+  const typeLabel = state.testType === "deep" ? "Deep test" : "Quick test";
   $("test-progress-label").textContent = run.status === "completed"
-    ? `Test complete · ${run.successful_streams} successful · ${run.failed_streams} failed`
-    : run.status === "failed" ? "Test failed" : "Testing streams…";
+    ? `${typeLabel} complete · ${run.successful_streams} successful · ${run.failed_streams} failed`
+    : run.status === "failed" ? `${typeLabel} failed` : `${typeLabel} running…`;
 }
 
 async function pollTestRun(runId) {
@@ -141,7 +143,7 @@ async function pollTestRun(runId) {
       const run = await getJson(`/api/stream-tests/${runId}`); renderTestProgress(run);
       if (["completed", "failed", "cancelled"].includes(run.status)) {
         state.polling = false; renderPlaylists(); await loadChannels();
-        $("status").textContent = `Stream test ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
+        $("status").textContent = `${state.testType === "deep" ? "Deep" : "Quick"} test ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -149,14 +151,20 @@ async function pollTestRun(runId) {
   } catch (error) { state.polling = false; renderPlaylists(); $("status").innerHTML = `<span class="error">Test status error: ${escapeHtml(error.message)}</span>`; }
 }
 
-async function startTest() {
-  const playlist = selectedPlaylist(); if (!playlist || playlist.latest_version_id == null || state.polling) return;
-  $("status").textContent = `Starting stream test for ${playlist.name}…`;
+async function startTest(testType) {
+  const playlist = selectedPlaylist();
+  if (!playlist || playlist.latest_version_id == null || state.polling) return;
+  state.testType = testType;
+  const label = testType === "deep" ? "Deep test" : "Quick test";
+  $("status").textContent = `Starting ${label.toLowerCase()} for ${playlist.name}…`;
   try {
-    const response = await fetch(`/api/stream-tests?source_playlist_id=${encodeURIComponent(state.playlistId)}`, { method: "POST" });
+    const response = await fetch(`/api/stream-tests?source_playlist_id=${encodeURIComponent(state.playlistId)}&test_type=${encodeURIComponent(testType)}`, { method: "POST" });
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    const run = await response.json(); state.testRunId = run.test_run_id; renderTestProgress(run); await pollTestRun(state.testRunId);
-  } catch (error) { $("status").innerHTML = `<span class="error">Test start failed: ${escapeHtml(error.message)}</span>`; }
+    const run = await response.json();
+    state.testRunId = run.test_run_id;
+    renderTestProgress(run);
+    await pollTestRun(state.testRunId);
+  } catch (error) { state.polling = false; renderPlaylists(); $("status").innerHTML = `<span class="error">Test start failed: ${escapeHtml(error.message)}</span>`; }
 }
 
 async function exportPlaylist() {
@@ -183,5 +191,8 @@ $("playlist").addEventListener("change", async (event) => {
   state.playlistId = Number(event.target.value) || null; state.selectedId = null;
   $("empty").hidden = false; $("channel-detail").hidden = true; renderPlaylists(); await loadChannels();
 });
-$("test").addEventListener("click", startTest); $("export").addEventListener("click", exportPlaylist); $("filter").addEventListener("input", renderChannels);
+$("test").addEventListener("click", () => startTest("quick"));
+$("deep-test").addEventListener("click", () => startTest("deep"));
+$("export").addEventListener("click", exportPlaylist);
+$("filter").addEventListener("input", renderChannels);
 Promise.all([loadPlaylists(), loadChannels()]);
