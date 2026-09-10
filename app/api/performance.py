@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,11 +23,12 @@ DbSession = Annotated[Session, Depends(get_db)]
 @router.get("/channels", response_model=list[ChannelSummaryResponse])
 def list_channels_performance(
     session: DbSession,
+    source_playlist_id: int | None = Query(default=None, gt=0),
 ) -> list[ChannelSummaryResponse]:
-    """List channels with their current performance summary."""
+    """List channels with performance summaries, optionally scoped to a playlist."""
     return [
         ChannelSummaryResponse.from_model(item)
-        for item in get_channels_performance(session)
+        for item in get_channels_performance(session, source_playlist_id)
     ]
 
 
