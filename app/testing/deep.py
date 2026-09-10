@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,7 +8,7 @@ from app.db.models.enums import TestType
 from app.testing.stream import StreamTestEngine, StreamTestRunner
 
 
-DeepTestEngine = StreamTestEngine  # noqa: I001
+DeepTestEngine = StreamTestEngine
 
 
 class DeepTestRunner(StreamTestRunner):
