@@ -273,7 +273,11 @@ class StreamTestEngine(QuickTestEngine):
             stderr = " ".join(line for line in stderr_lines if line)
         lower_stderr = stderr.lower()
         if first_frame_ms is None:
-            if "allowed_segment_extensions" in lower_stderr or "extension_picky" in lower_stderr:
+            if (
+                "allowed_segment_extensions" in lower_stderr
+                or "extension_picky" in lower_stderr
+                or "mismatches allowed extensions" in lower_stderr
+            ):
                 error_type = ErrorType.INVALID_MANIFEST
             elif "unknown decoder" in lower_stderr or (
                 "decoder" in lower_stderr and "not found" in lower_stderr
