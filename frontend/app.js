@@ -1,4 +1,4 @@
-const state = { channels: [], selectedId: null };
+const state = { channels: [], selectedId: null, playlists: [], playlistId: null };
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,6 +18,20 @@ async function getJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json();
+}
+
+function renderPlaylists() {
+  const select = $("playlist");
+  select.innerHTML = `<option value="">Select playlist…</option>` + state.playlists.map((item) => {
+    const version = item.latest_version_number == null ? "no completed version" : `v${item.latest_version_number}`;
+    return `<option value="${item.id}">${escapeHtml(item.name)} · ${version}</option>`;
+  }).join("");
+  if (state.playlistId != null && state.playlists.some((item) => item.id === state.playlistId)) {
+    select.value = String(state.playlistId);
+  }
+  $("export").disabled = state.playlistId == null || !state.playlists.some(
+    (item) => item.id === state.playlistId && item.latest_version_id != null,
+  );
 }
 
 function renderChannels() {
@@ -95,6 +109,19 @@ function renderStream(item) {
     </article>`;
 }
 
+async function loadPlaylists() {
+  try {
+    state.playlists = await getJson("/api/source-playlists");
+    if (state.playlistId == null) {
+      const first = state.playlists.find((item) => item.latest_version_id != null);
+      state.playlistId = first ? first.id : null;
+    }
+    renderPlaylists();
+  } catch (error) {
+    $("status").innerHTML = `<span class="error">Playlist API error: ${escapeHtml(error.message)}</span>`;
+  }
+}
+
 async function loadChannels() {
   $("status").textContent = "Loading channels…";
   try {
@@ -109,10 +136,45 @@ async function loadChannels() {
   }
 }
 
+async function exportPlaylist() {
+  if (state.playlistId == null) return;
+  const playlist = state.playlists.find((item) => item.id === state.playlistId);
+  if (!playlist || playlist.latest_version_id == null) return;
+
+  $("status").textContent = "Preparing optimized playlist…";
+  try {
+    const response = await fetch(`/api/source-playlists/${state.playlistId}/optimized.m3u`);
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const blob = await response.blob();
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename="([^"]+)"/);
+    const filename = match ? match[1] : `iptv-manager-optimized-v${playlist.latest_version_number}.m3u`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    $("status").textContent = `Exported ${filename}`;
+  } catch (error) {
+    $("status").innerHTML = `<span class="error">Export failed: ${escapeHtml(error.message)}</span>`;
+  }
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 }
 
-$("refresh").addEventListener("click", loadChannels);
+$("refresh").addEventListener("click", async () => {
+  await Promise.all([loadPlaylists(), loadChannels()]);
+});
+$("playlist").addEventListener("change", async (event) => {
+  state.playlistId = Number(event.target.value) || null;
+  renderPlaylists();
+  await loadChannels();
+});
+$("export").addEventListener("click", exportPlaylist);
 $("filter").addEventListener("input", renderChannels);
-loadChannels();
+Promise.all([loadPlaylists(), loadChannels()]);
