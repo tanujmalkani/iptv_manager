@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from threading import Thread
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.models import TestRun
@@ -50,9 +51,29 @@ def _run_stream_tests(
             session.commit()
 
 
+def _start_background_test(
+    test_run_id: int,
+    source_playlist_id: int | None,
+    timeout_seconds: float,
+    playback_duration_seconds: float,
+    ffmpeg_binary: str,
+) -> None:
+    Thread(
+        target=_run_stream_tests,
+        args=(
+            test_run_id,
+            source_playlist_id,
+            timeout_seconds,
+            playback_duration_seconds,
+            ffmpeg_binary,
+        ),
+        daemon=True,
+        name=f"stream-test-{test_run_id}",
+    ).start()
+
+
 @router.post("/stream-tests", response_model=dict[str, int | str])
 def start_stream_tests(
-    background_tasks: BackgroundTasks,
     session: DbSession,
     source_playlist_id: int | None = None,
     timeout_seconds: float = 10.0,
@@ -90,8 +111,7 @@ def start_stream_tests(
     session.commit()
     session.refresh(test_run)
 
-    background_tasks.add_task(
-        _run_stream_tests,
+    _start_background_test(
         test_run.id,
         source_playlist_id,
         timeout_seconds,
