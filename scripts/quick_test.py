@@ -51,34 +51,40 @@ def _format_ms(value: float | None) -> str:
     return f"{value:.1f} ms" if value is not None else "-"
 
 
+def _format_mbps(value: float | None) -> str:
+    return f"{value / 1_000_000:.2f} Mbps" if value is not None else "-"
+
+
 def _print_stream_result(stream_test: StreamTest, index: int, total: int) -> None:
     metrics = stream_test.extra_metrics or {}
     print(f"\n[{index}/{total}] Stream {stream_test.stream_id}")
-    print(f"  Result:        {stream_test.result}")
-    print(f"  Available:     {'yes' if stream_test.available else 'no'}")
-    print(f"  DNS:            {_format_ms(stream_test.dns_ms)}")
-    print(f"  Connect:        {_format_ms(stream_test.connect_ms)}")
-    print(f"  TLS:            {_format_ms(stream_test.tls_ms)}")
-    print(f"  HTTP response:  {_format_ms(stream_test.http_response_ms)}")
-    print(f"  First data:     {_format_ms(stream_test.first_data_ms)}")
-    print(f"  First frame:    {_format_ms(stream_test.first_frame_ms)}")
-    print(f"  Duration:       {_format_ms(stream_test.test_duration_ms)}")
-    print(f"  Playback:       {_format_ms(metrics.get('playback_duration_ms'))}")
-    print(f"  Decoded frames: {metrics.get('decoded_frames', '-')}")
-    print(f"  Resolution:     {metrics.get('resolution') or '-'}")
+    print(f"  Result:          {stream_test.result}")
+    print(f"  Available:       {'yes' if stream_test.available else 'no'}")
+    print(f"  DNS:              {_format_ms(stream_test.dns_ms)}")
+    print(f"  Connect:          {_format_ms(stream_test.connect_ms)}")
+    print(f"  TLS:              {_format_ms(stream_test.tls_ms)}")
+    print(f"  HTTP response:    {_format_ms(stream_test.http_response_ms)}")
+    print(f"  First data:       {_format_ms(stream_test.first_data_ms)}")
+    print(f"  First frame:      {_format_ms(stream_test.first_frame_ms)}")
+    print(f"  Duration:         {_format_ms(stream_test.test_duration_ms)}")
+    print(f"  Playback:         {_format_ms(metrics.get('playback_duration_ms'))}")
+    print(f"  Media bytes:      {stream_test.bytes_received or 0:,}")
+    print(f"  Throughput:       {_format_mbps(metrics.get('throughput_bps'))}")
+    print(f"  Decoded frames:   {metrics.get('decoded_frames', '-')}")
+    print(f"  Resolution:       {metrics.get('resolution') or '-'}")
     fps = metrics.get("observed_fps")
     print(
-        f"  Observed FPS:   {float(fps):.2f}"
+        f"  Observed FPS:     {float(fps):.2f}"
         if fps is not None
-        else "  Observed FPS:   -"
+        else "  Observed FPS:     -"
     )
-    print(f"  Codec:          {metrics.get('codec') or '-'}")
-    print(f"  Audio:          {'yes' if metrics.get('audio_present') else 'no'}")
-    print(f"  Stable:         {'yes' if metrics.get('stable') else 'no'}")
+    print(f"  Codec:            {metrics.get('codec') or '-'}")
+    print(f"  Audio:            {'yes' if metrics.get('audio_present') else 'no'}")
+    print(f"  Stable:           {'yes' if metrics.get('stable') else 'no'}")
     if stream_test.error_stage:
-        print(f"  Error stage:    {stream_test.error_stage}")
+        print(f"  Error stage:      {stream_test.error_stage}")
     if stream_test.error_type:
-        print(f"  Error type:     {stream_test.error_type}")
+        print(f"  Error type:       {stream_test.error_type}")
 
 
 def main() -> int:
