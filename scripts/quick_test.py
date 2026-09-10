@@ -2,16 +2,21 @@ import argparse
 
 from app.config import get_settings
 from app.db.models import StreamTest
+from app.db.models.enums import TestType
 from app.db.session import SessionLocal
-from app.testing import StreamTestEngine, StreamTestRunner
+from app.testing import DeepTestEngine, DeepTestRunner, QuickTestEngine, QuickTestRunner
 
 
 def build_parser() -> argparse.ArgumentParser:
     settings = get_settings()
-    parser = argparse.ArgumentParser(
-        description="Run sequential IPTV stream tests with startup and sustained playback."
+    parser = argparse.ArgumentParser(description="Run IPTV quick or deep stream tests.")
+    parser.add_argument("--name", default=None, help="Test run name.")
+    parser.add_argument(
+        "--type",
+        choices=[TestType.QUICK.value, TestType.DEEP.value],
+        default=TestType.QUICK.value,
+        help="Test type (default: quick).",
     )
-    parser.add_argument("--name", default="Stream Test", help="Test run name.")
     parser.add_argument(
         "--source-playlist-id",
         type=int,
@@ -37,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--duration",
         type=float,
         default=10.0,
-        help="Sustained playback duration per stream in seconds (default: 10).",
+        help="Deep-test playback duration per stream in seconds (default: 10).",
     )
     parser.add_argument(
         "--ffmpeg",
@@ -89,26 +94,31 @@ def _print_stream_result(stream_test: StreamTest, index: int, total: int) -> Non
 
 def main() -> int:
     args = build_parser().parse_args()
-    runner = StreamTestRunner(
-        StreamTestEngine(
-            timeout_seconds=args.timeout,
-            playback_duration_seconds=args.duration,
-            ffmpeg_binary=args.ffmpeg,
+    if args.type == TestType.DEEP.value:
+        runner = DeepTestRunner(
+            DeepTestEngine(
+                timeout_seconds=args.timeout,
+                playback_duration_seconds=args.duration,
+                ffmpeg_binary=args.ffmpeg,
+            )
         )
-    )
+    else:
+        runner = QuickTestRunner(
+            QuickTestEngine(timeout_seconds=args.timeout, ffmpeg_binary=args.ffmpeg)
+        )
 
     with SessionLocal() as session:
-        print("Starting stream test...")
+        print(f"Starting {args.type} test...")
         test_run = runner.run(
             session,
-            name=args.name,
+            name=args.name or f"{args.type.title()} Test",
             source_playlist_id=args.source_playlist_id,
             stream_ids=args.stream_ids,
             on_result=_print_stream_result,
         )
 
     print("\n" + "=" * 60)
-    print(f"Stream test run: {test_run.id}")
+    print(f"{args.type.title()} test run: {test_run.id}")
     print(f"Status: {test_run.status}")
     print(f"Streams: {test_run.total_streams}")
     print(f"Completed: {test_run.completed_streams}")
