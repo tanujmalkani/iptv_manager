@@ -1,4 +1,4 @@
-const state = { channels: [], selectedId: null, playlists: [], playlistId: null };
+const state = { channels: [], selectedId: null, playlists: [], playlistId: null, testRunId: null, polling: false };
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +20,10 @@ async function getJson(url) {
   return response.json();
 }
 
+function selectedPlaylist() {
+  return state.playlists.find((item) => item.id === state.playlistId) || null;
+}
+
 function renderPlaylists() {
   const select = $("playlist");
   select.innerHTML = `<option value="">Select playlist…</option>` + state.playlists.map((item) => {
@@ -29,9 +33,9 @@ function renderPlaylists() {
   if (state.playlistId != null && state.playlists.some((item) => item.id === state.playlistId)) {
     select.value = String(state.playlistId);
   }
-  $("export").disabled = state.playlistId == null || !state.playlists.some(
-    (item) => item.id === state.playlistId && item.latest_version_id != null,
-  );
+  const ready = state.playlistId != null && selectedPlaylist()?.latest_version_id != null;
+  $("test").disabled = !ready || state.polling;
+  $("export").disabled = !ready || state.polling;
 }
 
 function renderChannels() {
@@ -123,11 +127,9 @@ async function loadPlaylists() {
 }
 
 async function loadChannels() {
-  $("status").textContent = "Loading channels…";
   try {
     state.channels = await getJson("/api/channels");
     renderChannels();
-    $("status").textContent = `${state.channels.length} channels loaded`;
     if (state.selectedId != null && state.channels.some((item) => item.channel_id === state.selectedId)) {
       await selectChannel(state.selectedId);
     }
@@ -136,9 +138,61 @@ async function loadChannels() {
   }
 }
 
+function renderTestProgress(run) {
+  const progress = $("test-progress");
+  progress.hidden = false;
+  const total = run.total_streams || 0;
+  const completed = run.completed_streams || 0;
+  const percent = total ? Math.min(100, Math.round((completed / total) * 100)) : 100;
+  $("test-progress-count").textContent = `${completed} / ${total}`;
+  $("test-progress-bar").style.width = `${percent}%`;
+  $("test-progress-label").textContent = run.status === "completed"
+    ? `Test complete · ${run.successful_streams} successful · ${run.failed_streams} failed`
+    : run.status === "failed" ? "Test failed" : "Testing streams…";
+}
+
+async function pollTestRun(runId) {
+  state.polling = true;
+  renderPlaylists();
+  try {
+    while (true) {
+      const run = await getJson(`/api/stream-tests/${runId}`);
+      renderTestProgress(run);
+      if (["completed", "failed", "cancelled"].includes(run.status)) {
+        state.polling = false;
+        renderPlaylists();
+        await loadChannels();
+        $("status").textContent = `Stream test ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } catch (error) {
+    state.polling = false;
+    renderPlaylists();
+    $("status").innerHTML = `<span class="error">Test status error: ${escapeHtml(error.message)}</span>`;
+  }
+}
+
+async function startTest() {
+  const playlist = selectedPlaylist();
+  if (!playlist || playlist.latest_version_id == null || state.polling) return;
+  $("status").textContent = `Starting stream test for ${playlist.name}…`;
+  try {
+    const response = await fetch(`/api/stream-tests?source_playlist_id=${encodeURIComponent(state.playlistId)}`, { method: "POST" });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const run = await response.json();
+    state.testRunId = run.test_run_id;
+    renderTestProgress({ ...run, total_streams: 0, completed_streams: 0, successful_streams: 0, failed_streams: 0 });
+    await pollTestRun(state.testRunId);
+  } catch (error) {
+    $("status").innerHTML = `<span class="error">Test start failed: ${escapeHtml(error.message)}</span>`;
+  }
+}
+
 async function exportPlaylist() {
-  if (state.playlistId == null) return;
-  const playlist = state.playlists.find((item) => item.id === state.playlistId);
+  if (state.playlistId == null || state.polling) return;
+  const playlist = selectedPlaylist();
   if (!playlist || playlist.latest_version_id == null) return;
 
   $("status").textContent = "Preparing optimized playlist…";
@@ -175,6 +229,7 @@ $("playlist").addEventListener("change", async (event) => {
   renderPlaylists();
   await loadChannels();
 });
+$("test").addEventListener("click", startTest);
 $("export").addEventListener("click", exportPlaylist);
 $("filter").addEventListener("input", renderChannels);
 Promise.all([loadPlaylists(), loadChannels()]);
