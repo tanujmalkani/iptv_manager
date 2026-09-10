@@ -59,6 +59,12 @@ class _PlaybackStderr(_FakePipe):
         self.released.wait(timeout=1.0)
 
 
+class _HlsInputFailureStderr(_FakePipe):
+    def __iter__(self):
+        yield b"[hls @ 1] URL https://example.test/signed-token is not in allowed_segment_extensions\n"
+        yield b"Error opening input: Invalid data found when processing input\n"
+
+
 class _FakeProcess:
     def __init__(self, stderr: _FakePipe, stdout: _FakePipe) -> None:
         self.stderr = stderr
@@ -135,6 +141,21 @@ def test_stream_test_enforces_startup_timeout(monkeypatch) -> None:
     assert result["stable"] is False
     assert result["throughput_bps"] is None
     assert result["error_type"] is ErrorType.MEDIA_TIMEOUT
+
+
+def test_stream_test_classifies_hls_segment_extension_failure(monkeypatch) -> None:
+    stderr = _HlsInputFailureStderr()
+    stdout = _FakePipe()
+    process = _FakeProcess(stderr, stdout)
+    _patch_popen(monkeypatch, process)
+
+    engine = StreamTestEngine(timeout_seconds=1, playback_duration_seconds=0.1)
+    result = engine._test_playback("https://example.test/live.m3u8")
+
+    assert result["first_frame_ms"] is None
+    assert result["stable"] is False
+    assert result["error_type"] is ErrorType.INVALID_MANIFEST
+    assert "allowed_segment_extensions" in str(result["error_message"])
 
 
 def test_stream_test_rejects_non_positive_playback_duration() -> None:
