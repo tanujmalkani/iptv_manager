@@ -22,6 +22,8 @@ class StreamPerformanceResponse(BaseModel):
     p95_first_frame_ms: float | None
     median_playback_duration_ms: float | None
     average_fps: float | None
+    median_throughput_bps: float | None
+    average_throughput_bps: float | None
     stable_tests: int
     stability_rate: float
     last_tested_at: datetime | None
