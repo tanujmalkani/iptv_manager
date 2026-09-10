@@ -8,17 +8,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.models import TestRun
-from app.db.models.enums import TestRunStatus
+from app.db.models.enums import TestRunStatus, TestType
 from app.db.session import SessionLocal, get_db
-from app.testing.stream import StreamTestEngine, StreamTestRunner
+from app.testing.deep import DeepTestEngine, DeepTestRunner
+from app.testing.quick import QuickTestEngine, QuickTestRunner
 
 router = APIRouter(prefix="/api", tags=["testing"])
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def _run_stream_tests(
+def _run_tests(
     test_run_id: int,
     source_playlist_id: int | None,
+    test_type: str,
     timeout_seconds: float,
     playback_duration_seconds: float,
     ffmpeg_binary: str,
@@ -28,13 +30,21 @@ def _run_stream_tests(
         if test_run is None:
             return
         try:
-            runner = StreamTestRunner(
-                StreamTestEngine(
-                    timeout_seconds=timeout_seconds,
-                    playback_duration_seconds=playback_duration_seconds,
-                    ffmpeg_binary=ffmpeg_binary,
+            if test_type == TestType.DEEP.value:
+                runner = DeepTestRunner(
+                    DeepTestEngine(
+                        timeout_seconds=timeout_seconds,
+                        playback_duration_seconds=playback_duration_seconds,
+                        ffmpeg_binary=ffmpeg_binary,
+                    )
                 )
-            )
+            else:
+                runner = QuickTestRunner(
+                    QuickTestEngine(
+                        timeout_seconds=timeout_seconds,
+                        ffmpeg_binary=ffmpeg_binary,
+                    )
+                )
             runner.run(
                 session,
                 name=test_run.name,
@@ -54,21 +64,23 @@ def _run_stream_tests(
 def _start_background_test(
     test_run_id: int,
     source_playlist_id: int | None,
+    test_type: str,
     timeout_seconds: float,
     playback_duration_seconds: float,
     ffmpeg_binary: str,
 ) -> None:
     Thread(
-        target=_run_stream_tests,
+        target=_run_tests,
         args=(
             test_run_id,
             source_playlist_id,
+            test_type,
             timeout_seconds,
             playback_duration_seconds,
             ffmpeg_binary,
         ),
         daemon=True,
-        name=f"stream-test-{test_run_id}",
+        name=f"{test_type}-test-{test_run_id}",
     ).start()
 
 
@@ -76,35 +88,53 @@ def _start_background_test(
 def start_stream_tests(
     session: DbSession,
     source_playlist_id: int | None = None,
+    test_type: str = TestType.QUICK.value,
     timeout_seconds: float = 10.0,
     playback_duration_seconds: float = 10.0,
     ffmpeg_binary: str = "ffmpeg",
 ) -> dict[str, int | str]:
-    if timeout_seconds <= 0 or playback_duration_seconds <= 0:
-        raise HTTPException(status_code=400, detail="Test durations must be greater than zero")
-
-    runner = StreamTestRunner(
-        StreamTestEngine(
-            timeout_seconds=timeout_seconds,
-            playback_duration_seconds=playback_duration_seconds,
-            ffmpeg_binary=ffmpeg_binary,
+    if test_type not in {TestType.QUICK.value, TestType.DEEP.value}:
+        raise HTTPException(status_code=400, detail="test_type must be quick or deep")
+    if timeout_seconds <= 0:
+        raise HTTPException(status_code=400, detail="timeout_seconds must be greater than zero")
+    if test_type == TestType.DEEP.value and playback_duration_seconds <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="playback_duration_seconds must be greater than zero",
         )
-    )
+
+    if test_type == TestType.DEEP.value:
+        runner = DeepTestRunner(
+            DeepTestEngine(
+                timeout_seconds=timeout_seconds,
+                playback_duration_seconds=playback_duration_seconds,
+                ffmpeg_binary=ffmpeg_binary,
+            )
+        )
+    else:
+        runner = QuickTestRunner(
+            QuickTestEngine(timeout_seconds=timeout_seconds, ffmpeg_binary=ffmpeg_binary)
+        )
+
     streams = runner._select_streams(session, source_playlist_id, None)
     test_run = TestRun(
         source_playlist_id=source_playlist_id,
-        name="Stream Test",
-        profile="quick",
+        name=f"{test_type.title()} Test",
+        profile=test_type,
         status=TestRunStatus.PENDING.value,
         total_streams=len(streams),
         completed_streams=0,
         successful_streams=0,
         failed_streams=0,
         configuration_json={
-            "test_type": "quick",
+            "test_type": test_type,
             "timeout_seconds": timeout_seconds,
-            "playback_duration_seconds": playback_duration_seconds,
             "ffmpeg_binary": ffmpeg_binary,
+            **(
+                {"playback_duration_seconds": playback_duration_seconds}
+                if test_type == TestType.DEEP.value
+                else {}
+            ),
         },
     )
     session.add(test_run)
@@ -114,6 +144,7 @@ def start_stream_tests(
     _start_background_test(
         test_run.id,
         source_playlist_id,
+        test_type,
         timeout_seconds,
         playback_duration_seconds,
         ffmpeg_binary,
