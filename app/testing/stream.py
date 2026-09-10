@@ -31,10 +31,7 @@ class StreamTestEngine(QuickTestEngine):
         playback_duration_seconds: float = 10.0,
         ffmpeg_binary: str = "ffmpeg",
     ) -> None:
-        super().__init__(
-            timeout_seconds=timeout_seconds,
-            ffmpeg_binary=ffmpeg_binary,
-        )
+        super().__init__(timeout_seconds=timeout_seconds, ffmpeg_binary=ffmpeg_binary)
         if playback_duration_seconds <= 0:
             raise ValueError("playback_duration_seconds must be greater than zero")
         self.playback_duration_seconds = playback_duration_seconds
@@ -70,12 +67,8 @@ class StreamTestEngine(QuickTestEngine):
             result.available = True
         else:
             result.error_stage = "playback"
-            result.error_type = cast(
-                ErrorType, playback["error_type"]
-            )
-            result.error_message = cast(
-                str | None, playback["error_message"]
-            )
+            result.error_type = cast(ErrorType, playback["error_type"])
+            result.error_message = cast(str | None, playback["error_message"])
         result.test_duration_ms = (time.monotonic() - started) * 1000.0
         return result
 
@@ -105,10 +98,7 @@ class StreamTestEngine(QuickTestEngine):
                 errors="replace",
             )
         except FileNotFoundError:
-            return self._playback_failure(
-                ErrorType.PROBE_FAILURE,
-                f"FFmpeg binary not found: {self.ffmpeg_binary}",
-            )
+            return self._playback_failure(ErrorType.PROBE_FAILURE, f"FFmpeg binary not found: {self.ffmpeg_binary}")
         except OSError as exc:
             return self._playback_failure(ErrorType.PROBE_FAILURE, str(exc))
 
@@ -151,10 +141,7 @@ class StreamTestEngine(QuickTestEngine):
                     if first_frame_ms is None:
                         first_frame_ms = (time.monotonic() - started) * 1000.0
                         playback_started = time.monotonic()
-                        timer = threading.Timer(
-                            self.playback_duration_seconds,
-                            process.kill,
-                        )
+                        timer = threading.Timer(self.playback_duration_seconds, process.kill)
                         timer.daemon = True
                         timer.start()
         finally:
@@ -167,13 +154,10 @@ class StreamTestEngine(QuickTestEngine):
 
         playback_duration_ms = 0.0
         if playback_started is not None:
-            playback_duration_ms = (
-                time.monotonic() - playback_started
-            ) * 1000.0
+            playback_duration_ms = (time.monotonic() - playback_started) * 1000.0
         stable = (
             first_frame_ms is not None
-            and playback_duration_ms
-            >= self.playback_duration_seconds * 1000.0 * 0.95
+            and playback_duration_ms >= self.playback_duration_seconds * 1000.0 * 0.95
         )
 
         if first_pts is not None and last_pts is not None and last_pts > first_pts:
@@ -198,9 +182,7 @@ class StreamTestEngine(QuickTestEngine):
         stderr = " ".join(line for line in stderr_lines if line)
         lower_stderr = stderr.lower()
         if first_frame_ms is None:
-            if "unknown decoder" in lower_stderr or (
-                "decoder" in lower_stderr and "not found" in lower_stderr
-            ):
+            if "unknown decoder" in lower_stderr or ("decoder" in lower_stderr and "not found" in lower_stderr):
                 error_type = ErrorType.CODEC_ERROR
             elif process.returncode == 0:
                 error_type = ErrorType.NO_VIDEO
@@ -225,10 +207,7 @@ class StreamTestEngine(QuickTestEngine):
         }
 
     @staticmethod
-    def _playback_failure(
-        error_type: ErrorType,
-        message: str,
-    ) -> dict[str, object]:
+    def _playback_failure(error_type: ErrorType, message: str) -> dict[str, object]:
         return {
             "first_frame_ms": None,
             "playback_duration_ms": 0.0,
@@ -254,6 +233,7 @@ class StreamTestRunner(QuickTestRunner):
         source_playlist_id: int | None = None,
         stream_ids: list[int] | None = None,
         on_result: Callable[[StreamTest, int, int], None] | None = None,
+        existing_test_run: TestRun | None = None,
     ) -> TestRun:
         test_run = super().run(
             session,
@@ -261,6 +241,7 @@ class StreamTestRunner(QuickTestRunner):
             source_playlist_id=source_playlist_id,
             stream_ids=stream_ids,
             on_result=on_result,
+            existing_test_run=existing_test_run,
         )
         engine = cast(StreamTestEngine, self.engine)
         test_run.configuration_json = {
@@ -271,11 +252,7 @@ class StreamTestRunner(QuickTestRunner):
         return test_run
 
     @staticmethod
-    def _next_attempt_number(
-        session: Session,
-        test_run_id: int,
-        stream_id: int,
-    ) -> int:
+    def _next_attempt_number(session: Session, test_run_id: int, stream_id: int) -> int:
         del test_run_id
         latest = session.scalar(
             select(func.max(StreamTest.attempt_number)).where(
