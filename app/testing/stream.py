@@ -130,7 +130,9 @@ class StreamTestEngine(QuickTestEngine):
         playback_started: float | None = None
         bytes_lock = threading.Lock()
         stderr_lines: list[str] = []
-        reader_done = threading.Event()
+        stderr_lock = threading.Lock()
+        first_frame_event = threading.Event()
+        stderr_done = threading.Event()
 
         def drain_media() -> None:
             nonlocal media_bytes, media_bytes_after_first_frame
@@ -146,6 +148,7 @@ class StreamTestEngine(QuickTestEngine):
             finally:
                 reader_done.set()
 
+        reader_done = threading.Event()
         reader = threading.Thread(target=drain_media, name="ffmpeg-media-reader", daemon=True)
         reader.start()
 
@@ -156,57 +159,77 @@ class StreamTestEngine(QuickTestEngine):
         resolution: str | None = None
         codec: str | None = None
         audio_present = False
-        playback_timer: threading.Timer | None = None
-        startup_timer = threading.Timer(self.timeout_seconds, process.kill)
-        startup_timer.daemon = True
-        startup_timer.start()
 
-        try:
-            for raw_line in process.stderr:
-                line = raw_line.decode("utf-8", errors="replace")
-                if len(stderr_lines) < 30:
-                    stderr_lines.append(line.strip())
-                if codec is None:
-                    match = _STREAM_INFO_RE.search(line)
-                    if match:
-                        codec = match.group(1)
-                if "Audio:" in line:
-                    audio_present = True
-                if resolution is None:
-                    match = _RESOLUTION_RE.search(line)
-                    if match:
-                        resolution = f"{match.group(1)}x{match.group(2)}"
+        def read_stderr() -> None:
+            nonlocal first_frame_ms, first_pts, last_pts
+            nonlocal decoded_frames, resolution, codec, audio_present, playback_started
+            try:
+                for raw_line in process.stderr:
+                    line = raw_line.decode("utf-8", errors="replace")
+                    with stderr_lock:
+                        if len(stderr_lines) < 30:
+                            stderr_lines.append(line.strip())
 
-                frame_match = _FRAME_RE.search(line)
-                if frame_match:
-                    decoded_frames += 1
-                    pts_match = _PTS_RE.search(line)
-                    if pts_match:
-                        pts = float(pts_match.group(1))
-                        if first_pts is None:
-                            first_pts = pts
-                        last_pts = pts
-                    if first_frame_ms is None:
-                        first_frame_ms = (time.monotonic() - started) * 1000.0
-                        playback_started = time.monotonic()
-                        startup_timer.cancel()
-                        playback_timer = threading.Timer(
-                            self.playback_duration_seconds,
-                            process.kill,
-                        )
-                        playback_timer.daemon = True
-                        playback_timer.start()
-        finally:
-            startup_timer.cancel()
-            if playback_timer is not None:
-                playback_timer.cancel()
-            if process.poll() is None:
-                process.kill()
-            process.wait()
-            reader_done.wait(timeout=2.0)
-            reader.join(timeout=2.0)
-            process.stderr.close()
-            process.stdout.close()
+                    if codec is None:
+                        match = _STREAM_INFO_RE.search(line)
+                        if match:
+                            codec = match.group(1)
+                    if "Audio:" in line:
+                        audio_present = True
+                    if resolution is None:
+                        match = _RESOLUTION_RE.search(line)
+                        if match:
+                            resolution = f"{match.group(1)}x{match.group(2)}"
+
+                    if _FRAME_RE.search(line):
+                        decoded_frames += 1
+                        pts_match = _PTS_RE.search(line)
+                        if pts_match:
+                            pts = float(pts_match.group(1))
+                            if first_pts is None:
+                                first_pts = pts
+                            last_pts = pts
+                        if first_frame_ms is None:
+                            playback_started = time.monotonic()
+                            first_frame_ms = (playback_started - started) * 1000.0
+                            first_frame_event.set()
+            finally:
+                stderr_done.set()
+
+        stderr_reader = threading.Thread(
+            target=read_stderr,
+            name="ffmpeg-stderr-reader",
+            daemon=True,
+        )
+        stderr_reader.start()
+
+        # Keep process lifetime control in the main thread.  In particular, do not
+        # tie cleanup to the stderr iterator: FFmpeg can finish/close one pipe while
+        # the other reader still has buffered output to consume.
+        deadline = started + self.timeout_seconds
+        while first_frame_event.wait(timeout=0.01) is False:
+            if process.poll() is not None or stderr_done.is_set():
+                break
+            if time.monotonic() >= deadline:
+                break
+
+        if first_frame_event.is_set() and playback_started is not None:
+            playback_deadline = playback_started + self.playback_duration_seconds
+            while time.monotonic() < playback_deadline:
+                if process.poll() is not None:
+                    break
+                time.sleep(min(0.01, playback_deadline - time.monotonic()))
+
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+
+        reader_done.wait(timeout=2.0)
+        stderr_done.wait(timeout=2.0)
+        reader.join(timeout=2.0)
+        stderr_reader.join(timeout=2.0)
+        process.stderr.close()
+        process.stdout.close()
 
         playback_duration_ms = 0.0
         if playback_started is not None:
@@ -247,7 +270,8 @@ class StreamTestEngine(QuickTestEngine):
                 "error_message": None,
             }
 
-        stderr = " ".join(line for line in stderr_lines if line)
+        with stderr_lock:
+            stderr = " ".join(line for line in stderr_lines if line)
         lower_stderr = stderr.lower()
         if first_frame_ms is None:
             if "unknown decoder" in lower_stderr or (
