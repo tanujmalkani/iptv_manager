@@ -156,7 +156,10 @@ class StreamTestEngine(QuickTestEngine):
         resolution: str | None = None
         codec: str | None = None
         audio_present = False
-        timer: threading.Timer | None = None
+        playback_timer: threading.Timer | None = None
+        startup_timer = threading.Timer(self.timeout_seconds, process.kill)
+        startup_timer.daemon = True
+        startup_timer.start()
 
         try:
             for raw_line in process.stderr:
@@ -186,19 +189,24 @@ class StreamTestEngine(QuickTestEngine):
                     if first_frame_ms is None:
                         first_frame_ms = (time.monotonic() - started) * 1000.0
                         playback_started = time.monotonic()
-                        timer = threading.Timer(self.playback_duration_seconds, process.kill)
-                        timer.daemon = True
-                        timer.start()
+                        startup_timer.cancel()
+                        playback_timer = threading.Timer(
+                            self.playback_duration_seconds,
+                            process.kill,
+                        )
+                        playback_timer.daemon = True
+                        playback_timer.start()
         finally:
-            if timer is not None:
-                timer.cancel()
+            startup_timer.cancel()
+            if playback_timer is not None:
+                playback_timer.cancel()
             if process.poll() is None:
                 process.kill()
             process.wait()
-            process.stderr.close()
-            process.stdout.close()
             reader_done.wait(timeout=2.0)
             reader.join(timeout=2.0)
+            process.stderr.close()
+            process.stdout.close()
 
         playback_duration_ms = 0.0
         if playback_started is not None:
@@ -248,6 +256,8 @@ class StreamTestEngine(QuickTestEngine):
                 error_type = ErrorType.CODEC_ERROR
             elif process.returncode == 0:
                 error_type = ErrorType.NO_VIDEO
+            elif (time.monotonic() - started) >= self.timeout_seconds * 0.95:
+                error_type = ErrorType.MEDIA_TIMEOUT
             else:
                 error_type = ErrorType.DECODER_ERROR
             message = stderr or "FFmpeg failed before sustained playback."
