@@ -61,7 +61,10 @@ class _PlaybackStderr(_FakePipe):
 
 class _HlsInputFailureStderr(_FakePipe):
     def __iter__(self):
-        yield b"[hls @ 1] URL https://example.test/signed-token is not in allowed_segment_extensions\n"
+        yield (
+            b"[hls @ 1] URL https://example.test/signed-token "
+            b"is not in allowed_segment_extensions\n"
+        )
         yield b"Error opening input: Invalid data found when processing input\n"
 
 
