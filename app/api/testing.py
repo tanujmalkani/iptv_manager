@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -41,7 +42,7 @@ def _run_stream_tests(
             )
         except Exception as exc:
             test_run.status = TestRunStatus.FAILED.value
-            test_run.completed_at = test_run.completed_at
+            test_run.completed_at = datetime.now(UTC)
             test_run.configuration_json = {
                 **test_run.configuration_json,
                 "error": str(exc),
