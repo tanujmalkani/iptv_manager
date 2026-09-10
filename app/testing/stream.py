@@ -103,7 +103,7 @@ class StreamTestEngine(QuickTestEngine):
                     "-",
                     "-map",
                     "0:v:0",
-                    "-c:v",
+                    "-c",
                     "copy",
                     "-f",
                     "mpegts",
