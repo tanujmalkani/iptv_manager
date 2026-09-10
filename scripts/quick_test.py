@@ -7,7 +7,6 @@ from app.db.models.enums import TestType
 from app.db.session import SessionLocal
 from app.testing import DeepTestEngine, DeepTestRunner, QuickTestEngine, QuickTestRunner
 
-
 _URL_RE = re.compile(r"https?://\S+")
 
 
