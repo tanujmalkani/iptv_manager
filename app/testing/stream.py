@@ -47,20 +47,32 @@ class StreamTestEngine(QuickTestEngine):
             result.tls_ms = network.tls_ms
             result.http_response_ms = network.http_response_ms
             result.first_data_ms = network.first_data_ms
-            result.bytes_received = network.bytes_received
+            result.extra_metrics["startup_http_bytes"] = network.bytes_received
 
         playback = self._test_playback(url)
         result.first_frame_ms = cast(float | None, playback["first_frame_ms"])
-        result.extra_metrics = {
-            "playback_duration_seconds": self.playback_duration_seconds,
-            "playback_duration_ms": playback["playback_duration_ms"],
-            "decoded_frames": playback["decoded_frames"],
-            "resolution": playback["resolution"],
-            "observed_fps": playback["observed_fps"],
-            "codec": playback["codec"],
-            "audio_present": playback["audio_present"],
-            "stable": playback["stable"],
-        }
+        result.bytes_received = cast(int, playback["media_bytes"])
+        result.throughput_bps = cast(float | None, playback["throughput_bps"])
+        result.extra_metrics.update(
+            {
+                "playback_duration_seconds": self.playback_duration_seconds,
+                "playback_duration_ms": playback["playback_duration_ms"],
+                "decoded_frames": playback["decoded_frames"],
+                "resolution": playback["resolution"],
+                "observed_fps": playback["observed_fps"],
+                "codec": playback["codec"],
+                "audio_present": playback["audio_present"],
+                "stable": playback["stable"],
+                "media_bytes": playback["media_bytes"],
+                "throughput_bps": playback["throughput_bps"],
+                "throughput_mbps": (
+                    playback["throughput_bps"] / 1_000_000
+                    if playback["throughput_bps"] is not None
+                    else None
+                ),
+                "throughput_measurement": "ffmpeg_same_session_streamcopy",
+            }
+        )
 
         if playback["first_frame_ms"] is not None and playback["stable"]:
             result.result = TestResult.SUCCESS
@@ -90,19 +102,55 @@ class StreamTestEngine(QuickTestEngine):
                     "-f",
                     "null",
                     "-",
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-c",
+                    "copy",
+                    "-f",
+                    "matroska",
+                    "pipe:1",
                 ],
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                text=False,
             )
         except FileNotFoundError:
-            return self._playback_failure(ErrorType.PROBE_FAILURE, f"FFmpeg binary not found: {self.ffmpeg_binary}")
+            return self._playback_failure(
+                ErrorType.PROBE_FAILURE,
+                f"FFmpeg binary not found: {self.ffmpeg_binary}",
+            )
         except OSError as exc:
             return self._playback_failure(ErrorType.PROBE_FAILURE, str(exc))
 
+        assert process.stdout is not None
         assert process.stderr is not None
+        media_bytes = 0
+        media_bytes_after_first_frame = 0
+        playback_started: float | None = None
+        bytes_lock = threading.Lock()
+        stderr_lines: list[str] = []
+        reader_done = threading.Event()
+
+        def drain_media() -> None:
+            nonlocal media_bytes, media_bytes_after_first_frame
+            try:
+                while True:
+                    chunk = process.stdout.read(64 * 1024)
+                    if not chunk:
+                        break
+                    now = time.monotonic()
+                    with bytes_lock:
+                        media_bytes += len(chunk)
+                        if playback_started is not None:
+                            media_bytes_after_first_frame += len(chunk)
+            finally:
+                reader_done.set()
+
+        reader = threading.Thread(target=drain_media, name="ffmpeg-media-reader", daemon=True)
+        reader.start()
+
         first_frame_ms: float | None = None
         first_pts: float | None = None
         last_pts: float | None = None
@@ -110,12 +158,11 @@ class StreamTestEngine(QuickTestEngine):
         resolution: str | None = None
         codec: str | None = None
         audio_present = False
-        stderr_lines: list[str] = []
-        playback_started: float | None = None
         timer: threading.Timer | None = None
 
         try:
-            for line in process.stderr:
+            for raw_line in process.stderr:
+                line = raw_line.decode("utf-8", errors="replace")
                 if len(stderr_lines) < 30:
                     stderr_lines.append(line.strip())
                 if codec is None:
@@ -151,13 +198,26 @@ class StreamTestEngine(QuickTestEngine):
                 process.kill()
             process.wait()
             process.stderr.close()
+            process.stdout.close()
+            reader_done.wait(timeout=2.0)
+            reader.join(timeout=2.0)
 
         playback_duration_ms = 0.0
         if playback_started is not None:
             playback_duration_ms = (time.monotonic() - playback_started) * 1000.0
+
+        with bytes_lock:
+            measured_bytes = media_bytes_after_first_frame
+            total_media_bytes = media_bytes
+
         stable = (
             first_frame_ms is not None
             and playback_duration_ms >= self.playback_duration_seconds * 1000.0 * 0.95
+        )
+        throughput_bps = (
+            measured_bytes * 8 / (playback_duration_ms / 1000.0)
+            if playback_duration_ms > 0 and measured_bytes > 0
+            else None
         )
 
         if first_pts is not None and last_pts is not None and last_pts > first_pts:
@@ -175,6 +235,8 @@ class StreamTestEngine(QuickTestEngine):
                 "codec": codec,
                 "audio_present": audio_present,
                 "stable": True,
+                "media_bytes": total_media_bytes,
+                "throughput_bps": throughput_bps,
                 "error_type": ErrorType.UNKNOWN,
                 "error_message": None,
             }
@@ -182,7 +244,9 @@ class StreamTestEngine(QuickTestEngine):
         stderr = " ".join(line for line in stderr_lines if line)
         lower_stderr = stderr.lower()
         if first_frame_ms is None:
-            if "unknown decoder" in lower_stderr or ("decoder" in lower_stderr and "not found" in lower_stderr):
+            if "unknown decoder" in lower_stderr or (
+                "decoder" in lower_stderr and "not found" in lower_stderr
+            ):
                 error_type = ErrorType.CODEC_ERROR
             elif process.returncode == 0:
                 error_type = ErrorType.NO_VIDEO
@@ -202,6 +266,8 @@ class StreamTestEngine(QuickTestEngine):
             "codec": codec,
             "audio_present": audio_present,
             "stable": False,
+            "media_bytes": total_media_bytes,
+            "throughput_bps": throughput_bps,
             "error_type": error_type,
             "error_message": message,
         }
@@ -217,6 +283,8 @@ class StreamTestEngine(QuickTestEngine):
             "codec": None,
             "audio_present": False,
             "stable": False,
+            "media_bytes": 0,
+            "throughput_bps": None,
             "error_type": error_type,
             "error_message": message,
         }
@@ -247,6 +315,7 @@ class StreamTestRunner(QuickTestRunner):
         test_run.configuration_json = {
             **test_run.configuration_json,
             "playback_duration_seconds": engine.playback_duration_seconds,
+            "throughput_measurement": "ffmpeg_same_session_streamcopy",
         }
         session.commit()
         return test_run
