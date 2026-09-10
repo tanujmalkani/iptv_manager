@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 
 function formatMs(value) { return value == null ? "—" : `${Math.round(value)} ms`; }
 function formatPercent(value) { return value == null ? "—" : `${Math.round(value * 100)}%`; }
+function formatMbps(value) { return value == null ? "—" : `${(value / 1_000_000).toFixed(2)} Mbps`; }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : "Never"; }
 
 async function getJson(url) {
@@ -88,6 +89,8 @@ function renderStream(item) {
         <div><span class="meta">Success rate</span><br>${formatPercent(p.success_rate)}</div>
         <div><span class="meta">Median first frame</span><br>${formatMs(p.median_first_frame_ms)}</div>
         <div><span class="meta">P95 first frame</span><br>${formatMs(p.p95_first_frame_ms)}</div>
+        <div><span class="meta">Median throughput</span><br>${formatMbps(p.median_throughput_bps)}</div>
+        <div><span class="meta">Average throughput</span><br>${formatMbps(p.average_throughput_bps)}</div>
         <div><span class="meta">Avg FPS</span><br>${p.average_fps == null ? "—" : p.average_fps.toFixed(1)}</div>
         <div><span class="meta">Stability</span><br>${formatPercent(p.stability_rate)}</div>
         <div><span class="meta">Median playback</span><br>${formatMs(p.median_playback_duration_ms)}</div>
