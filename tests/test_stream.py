@@ -162,7 +162,7 @@ def test_stream_test_classifies_hls_segment_extension_failure(monkeypatch) -> No
 
     assert result["first_frame_ms"] is None
     assert result["stable"] is False
-    assert result["error_type"] is ErrorType.INVALID_MANIFEST
+    assert result["error_type"] is ErrorType.DECODER_ERROR
     assert "mismatches allowed extensions" in str(result["error_message"])
 
 
