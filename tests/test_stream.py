@@ -62,9 +62,10 @@ class _PlaybackStderr(_FakePipe):
 class _HlsInputFailureStderr(_FakePipe):
     def __iter__(self):
         yield (
-            b"[hls @ 1] URL https://example.test/signed-token "
-            b"is not in allowed_segment_extensions\n"
+            b"[hls @ 1] URL https://example.test/signed-token?token=abc "
+            b"detected format mpegts extension none mismatches allowed extensions in url\n"
         )
+        yield b"Error when loading first segment\n"
         yield b"Error opening input: Invalid data found when processing input\n"
 
 
@@ -122,6 +123,8 @@ def test_stream_test_measures_media_throughput_from_same_session(monkeypatch) ->
     assert result["audio_present"] is True
     assert "-allowed_segment_extensions" in calls[0]
     assert calls[0][calls[0].index("-allowed_segment_extensions") + 1] == "ALL"
+    assert "-extension_picky" in calls[0]
+    assert calls[0][calls[0].index("-extension_picky") + 1] == "0"
     assert "-c" in calls[0]
     assert calls[0][calls[0].index("-c") + 1] == "copy"
     assert "pipe:1" in calls[0]
@@ -160,7 +163,7 @@ def test_stream_test_classifies_hls_segment_extension_failure(monkeypatch) -> No
     assert result["first_frame_ms"] is None
     assert result["stable"] is False
     assert result["error_type"] is ErrorType.INVALID_MANIFEST
-    assert "allowed_segment_extensions" in str(result["error_message"])
+    assert "mismatches allowed extensions" in str(result["error_message"])
 
 
 def test_stream_test_rejects_non_positive_playback_duration() -> None:
