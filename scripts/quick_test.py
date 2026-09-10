@@ -5,7 +5,12 @@ from app.config import get_settings
 from app.db.models import StreamTest
 from app.db.models.enums import TestType
 from app.db.session import SessionLocal
-from app.testing import DeepTestEngine, DeepTestRunner, QuickTestEngine, QuickTestRunner
+from app.testing import (
+    DeepTestEngine,
+    DeepTestRunner,
+    QuickTestEngine,
+    QuickTestRunner,
+)  # noqa: I001
 
 
 _URL_RE = re.compile(r"https?://\S+")
