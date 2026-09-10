@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Channel, ChannelStream, StreamTest
+from app.db.models import Channel, ChannelStream, PlaylistEntry, SourcePlaylistVersion, StreamTest
 from app.performance.aggregation import StreamPerformance, aggregate_stream_tests
 from app.performance.ranking import rank_channel_streams
 
@@ -40,9 +40,6 @@ def rank_streams_for_channel(
     ]
     ranked = rank_channel_streams(performances)
 
-    # A primary stream is a recommendation backed by at least one successful
-    # observation. Untested or failure-only streams remain visible, but are
-    # never presented as a usable recommendation.
     primary_stream_id = next(
         (
             item.performance.stream_id
@@ -75,14 +72,29 @@ def get_channel_performance(session: Session, channel_id: int) -> ChannelPerform
     return _build_channel_performance(session, channel)
 
 
-def get_channels_performance(session: Session) -> list[ChannelPerformance]:
-    """Return ranked stream performance for every channel with playable streams."""
-    channels = session.scalars(
+def get_channels_performance(
+    session: Session,
+    source_playlist_id: int | None = None,
+) -> list[ChannelPerformance]:
+    """Return ranked stream performance, optionally scoped to a source playlist."""
+    statement = (
         select(Channel)
         .options(selectinload(Channel.streams))
         .join(ChannelStream, ChannelStream.channel_id == Channel.id)
-        .distinct()
-        .order_by(Channel.canonical_name, Channel.id)
+    )
+    if source_playlist_id is not None:
+        statement = (
+            statement
+            .join(PlaylistEntry, PlaylistEntry.channel_id == Channel.id)
+            .join(
+                SourcePlaylistVersion,
+                SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id,
+            )
+            .where(SourcePlaylistVersion.source_playlist_id == source_playlist_id)
+        )
+
+    channels = session.scalars(
+        statement.distinct().order_by(Channel.canonical_name, Channel.id)
     ).all()
 
     stream_ids = {stream.stream_id for channel in channels for stream in channel.streams}
