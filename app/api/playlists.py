@@ -18,11 +18,16 @@ DbSession = Annotated[Session, Depends(get_db)]
 @router.get("/source-playlists", response_model=list[SourcePlaylistResponse])
 def list_source_playlists(session: DbSession) -> list[SourcePlaylistResponse]:
     """List imported playlists and their latest completed version."""
-    playlists = session.scalars(select(SourcePlaylist).order_by(SourcePlaylist.name, SourcePlaylist.id)).all()
+    playlists = session.scalars(
+        select(SourcePlaylist).order_by(SourcePlaylist.name, SourcePlaylist.id)
+    ).all()
     versions = session.scalars(
         select(SourcePlaylistVersion)
         .where(SourcePlaylistVersion.status == VersionStatus.COMPLETED.value)
-        .order_by(SourcePlaylistVersion.source_playlist_id, SourcePlaylistVersion.version_number.desc())
+        .order_by(
+            SourcePlaylistVersion.source_playlist_id,
+            SourcePlaylistVersion.version_number.desc(),
+        )
     ).all()
 
     latest_by_playlist: dict[int, SourcePlaylistVersion] = {}
