@@ -33,6 +33,8 @@ class StreamPerformance:
     p95_first_frame_ms: float | None
     median_playback_duration_ms: float | None
     average_fps: float | None
+    median_throughput_bps: float | None
+    average_throughput_bps: float | None
     stable_tests: int
     stability_rate: float
     last_tested_at: datetime | None
@@ -44,9 +46,9 @@ def aggregate_stream_tests(
 ) -> StreamPerformance:
     """Aggregate historical observations for one stream.
 
-    Startup latency statistics use successful observations only. Failed attempts
-    remain part of reliability and stability calculations so a fast but flaky
-    stream cannot look healthy merely because its successful attempts were fast.
+    Startup latency and throughput statistics use successful observations only.
+    Failed attempts remain part of reliability and stability calculations so a
+    fast stream cannot look healthy merely because its successful attempts were fast.
     """
     stream_tests = [test for test in tests if test.stream_id == stream_id]
     total = len(stream_tests)
@@ -70,11 +72,12 @@ def aggregate_stream_tests(
         for test in stream_tests
         if test.available and test.extra_metrics.get("observed_fps") is not None
     ]
-    stable_tests = sum(
-        1
+    throughput_values = [
+        float(test.throughput_bps)
         for test in stream_tests
-        if bool(test.extra_metrics.get("stable"))
-    )
+        if test.available and test.throughput_bps is not None
+    ]
+    stable_tests = sum(1 for test in stream_tests if bool(test.extra_metrics.get("stable")))
     stability_rate = stable_tests / total if total else 0.0
 
     timestamps = [
@@ -95,6 +98,8 @@ def aggregate_stream_tests(
         p95_first_frame_ms=_percentile(first_frames, 0.95),
         median_playback_duration_ms=median(playback_durations) if playback_durations else None,
         average_fps=mean(fps_values) if fps_values else None,
+        median_throughput_bps=median(throughput_values) if throughput_values else None,
+        average_throughput_bps=mean(throughput_values) if throughput_values else None,
         stable_tests=stable_tests,
         stability_rate=stability_rate,
         last_tested_at=max(timestamps) if timestamps else None,
