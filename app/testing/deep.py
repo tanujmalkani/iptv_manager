@@ -8,7 +8,7 @@ from app.db.models.enums import TestType
 from app.testing.stream import StreamTestEngine, StreamTestRunner
 
 
-DeepTestEngine = StreamTestEngine
+DeepTestEngine = StreamTestEngine  # noqa: I001
 
 
 class DeepTestRunner(StreamTestRunner):
