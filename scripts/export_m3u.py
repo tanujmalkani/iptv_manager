@@ -10,7 +10,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Export an optimized IPTV M3U playlist.")
     parser.add_argument("source_playlist_id", type=int, help="Source playlist ID")
     parser.add_argument("-o", "--output", default=None, help="Output M3U file path")
-    parser.add_argument("--version-id", type=int, default=None, help="Specific completed version ID")
+    parser.add_argument(
+        "--version-id", type=int, default=None, help="Specific completed version ID"
+    )
     args = parser.parse_args()
 
     with SessionLocal() as session:
@@ -23,7 +25,9 @@ def main() -> None:
     if result is None:
         raise SystemExit("No completed playlist version found.")
 
-    output_path = args.output or f"iptv-manager-optimized-v{result.source_playlist_version_number}.m3u"
+    output_path = args.output or (
+        f"iptv-manager-optimized-v{result.source_playlist_version_number}.m3u"
+    )
     with open(output_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(result.content)
 
