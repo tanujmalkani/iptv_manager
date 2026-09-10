@@ -18,7 +18,7 @@ from app.testing.quick import QuickTestEngine, QuickTestResult, QuickTestRunner
 _STREAM_INFO_RE = re.compile(r"Video:\s*([^,\s]+)")
 _RESOLUTION_RE = re.compile(r"\bs:\s*(\d+)x(\d+)")
 _PTS_RE = re.compile(r"\bpts_time:\s*([0-9.]+)")
-_FRAME_RE = re.compile(r"\]\s+n:\s*(\d+)\s+pts:")
+_FRAME_RE = re.compile(r"\]\s+n:\s*\d+\s+pts:")
 
 
 class StreamTestEngine(QuickTestEngine):
@@ -52,7 +52,6 @@ class StreamTestEngine(QuickTestEngine):
         playback = self._test_playback(url)
         result.first_frame_ms = cast(float | None, playback["first_frame_ms"])
         result.bytes_received = cast(int, playback["media_bytes"])
-        result.throughput_bps = cast(float | None, playback["throughput_bps"])
         result.extra_metrics.update(
             {
                 "playback_duration_seconds": self.playback_duration_seconds,
@@ -140,7 +139,6 @@ class StreamTestEngine(QuickTestEngine):
                     chunk = process.stdout.read(64 * 1024)
                     if not chunk:
                         break
-                    now = time.monotonic()
                     with bytes_lock:
                         media_bytes += len(chunk)
                         if playback_started is not None:
@@ -312,6 +310,11 @@ class StreamTestRunner(QuickTestRunner):
             existing_test_run=existing_test_run,
         )
         engine = cast(StreamTestEngine, self.engine)
+        tests = session.scalars(
+            select(StreamTest).where(StreamTest.test_run_id == test_run.id)
+        ).all()
+        for stream_test in tests:
+            stream_test.throughput_bps = stream_test.extra_metrics.get("throughput_bps")
         test_run.configuration_json = {
             **test_run.configuration_json,
             "playback_duration_seconds": engine.playback_duration_seconds,
