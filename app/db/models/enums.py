@@ -38,6 +38,7 @@ class TestRunStatus(StrEnum):
 
 class TestType(StrEnum):
     QUICK = "quick"
+    DEEP = "deep"
     THROUGHPUT = "throughput"
 
 
