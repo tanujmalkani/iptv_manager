@@ -120,8 +120,8 @@ def test_stream_test_measures_media_throughput_from_same_session(monkeypatch) ->
     assert result["resolution"] == "854x480"
     assert result["codec"] == "h264"
     assert result["audio_present"] is True
-    assert "-allowed_extensions" in calls[0]
-    assert calls[0][calls[0].index("-allowed_extensions") + 1] == "ALL"
+    assert "-allowed_segment_extensions" in calls[0]
+    assert calls[0][calls[0].index("-allowed_segment_extensions") + 1] == "ALL"
     assert "-c" in calls[0]
     assert calls[0][calls[0].index("-c") + 1] == "copy"
     assert "pipe:1" in calls[0]
