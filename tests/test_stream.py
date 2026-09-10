@@ -52,7 +52,7 @@ class _PlaybackStderr(_FakePipe):
         self.released = released
 
     def __iter__(self):
-        yield b"Stream #0:0: Video: h264, 854x480\n"
+        yield b"Stream #0:0: Video: h264, yuv420p, 854x480 [SAR 1:1 DAR 427:240]\n"
         yield b"Stream #0:1: Audio: aac\n"
         yield b"[Parsed_showinfo_0] n:   0 pts:      0 pts_time:0.000\n"
         yield b"[Parsed_showinfo_0] n:   1 pts:   40000 pts_time:0.040\n"
