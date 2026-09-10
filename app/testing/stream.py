@@ -69,7 +69,7 @@ class StreamTestEngine(QuickTestEngine):
                     if playback["throughput_bps"] is not None
                     else None
                 ),
-                "throughput_measurement": "ffmpeg_same_session_streamcopy",
+                "throughput_measurement": "ffmpeg_same_session_video_streamcopy",
             }
         )
 
@@ -103,12 +103,10 @@ class StreamTestEngine(QuickTestEngine):
                     "-",
                     "-map",
                     "0:v:0",
-                    "-map",
-                    "0:a?",
-                    "-c",
+                    "-c:v",
                     "copy",
                     "-f",
-                    "matroska",
+                    "mpegts",
                     "pipe:1",
                 ],
                 stdout=subprocess.PIPE,
@@ -203,9 +201,6 @@ class StreamTestEngine(QuickTestEngine):
         )
         stderr_reader.start()
 
-        # Keep process lifetime control in the main thread.  In particular, do not
-        # tie cleanup to the stderr iterator: FFmpeg can finish/close one pipe while
-        # the other reader still has buffered output to consume.
         deadline = started + self.timeout_seconds
         while first_frame_event.wait(timeout=0.01) is False:
             if process.poll() is not None or stderr_done.is_set():
@@ -352,7 +347,7 @@ class StreamTestRunner(QuickTestRunner):
         test_run.configuration_json = {
             **test_run.configuration_json,
             "playback_duration_seconds": engine.playback_duration_seconds,
-            "throughput_measurement": "ffmpeg_same_session_streamcopy",
+            "throughput_measurement": "ffmpeg_same_session_video_streamcopy",
         }
         session.commit()
         return test_run
