@@ -92,6 +92,8 @@ class StreamTestEngine(QuickTestEngine):
                     "-hide_banner",
                     "-loglevel",
                     "info",
+                    "-allowed_extensions",
+                    "ALL",
                     "-i",
                     url,
                     "-map",
