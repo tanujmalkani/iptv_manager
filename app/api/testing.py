@@ -17,7 +17,6 @@ DbSession = Annotated[Session, Depends(get_db)]
 def _run_stream_tests(
     test_run_id: int,
     source_playlist_id: int | None,
-    stream_ids: list[int] | None,
     timeout_seconds: float,
     playback_duration_seconds: float,
     ffmpeg_binary: str,
@@ -38,10 +37,11 @@ def _run_stream_tests(
                 session,
                 name=test_run.name,
                 source_playlist_id=source_playlist_id,
-                stream_ids=stream_ids,
+                existing_test_run=test_run,
             )
         except Exception as exc:
             test_run.status = TestRunStatus.FAILED.value
+            test_run.completed_at = test_run.completed_at
             test_run.configuration_json = {
                 **test_run.configuration_json,
                 "error": str(exc),
@@ -61,12 +61,20 @@ def start_stream_tests(
     if timeout_seconds <= 0 or playback_duration_seconds <= 0:
         raise HTTPException(status_code=400, detail="Test durations must be greater than zero")
 
+    runner = StreamTestRunner(
+        StreamTestEngine(
+            timeout_seconds=timeout_seconds,
+            playback_duration_seconds=playback_duration_seconds,
+            ffmpeg_binary=ffmpeg_binary,
+        )
+    )
+    streams = runner._select_streams(session, source_playlist_id, None)
     test_run = TestRun(
         source_playlist_id=source_playlist_id,
         name="Stream Test",
         profile="quick",
         status=TestRunStatus.PENDING.value,
-        total_streams=0,
+        total_streams=len(streams),
         completed_streams=0,
         successful_streams=0,
         failed_streams=0,
@@ -85,7 +93,6 @@ def start_stream_tests(
         _run_stream_tests,
         test_run.id,
         source_playlist_id,
-        None,
         timeout_seconds,
         playback_duration_seconds,
         ffmpeg_binary,
