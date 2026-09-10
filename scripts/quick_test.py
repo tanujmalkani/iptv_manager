@@ -1,10 +1,14 @@
 import argparse
+import re
 
 from app.config import get_settings
 from app.db.models import StreamTest
 from app.db.models.enums import TestType
 from app.db.session import SessionLocal
 from app.testing import DeepTestEngine, DeepTestRunner, QuickTestEngine, QuickTestRunner
+
+
+_URL_RE = re.compile(r"https?://\S+")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +64,14 @@ def _format_mbps(value: float | None) -> str:
     return f"{value / 1_000_000:.2f} Mbps" if value is not None else "-"
 
 
+def _format_error_message(value: object) -> str:
+    message = " ".join(str(value).split())
+    message = _URL_RE.sub("[URL]", message)
+    if len(message) > 1200:
+        message = f"{message[:300]} ... {message[-897:]}"
+    return message
+
+
 def _print_stream_result(stream_test: StreamTest, index: int, total: int) -> None:
     metrics = stream_test.extra_metrics or {}
     print(f"\n[{index}/{total}] Stream {stream_test.stream_id}")
@@ -91,10 +103,7 @@ def _print_stream_result(stream_test: StreamTest, index: int, total: int) -> Non
     if stream_test.error_type:
         print(f"  Error type:       {stream_test.error_type}")
     if stream_test.error_message:
-        message = " ".join(str(stream_test.error_message).split())
-        if len(message) > 500:
-            message = f"{message[:497]}..."
-        print(f"  Error message:    {message}")
+        print(f"  Error message:    {_format_error_message(stream_test.error_message)}")
 
 
 def main() -> int:
