@@ -49,6 +49,63 @@ def test_frontend_and_health_are_served() -> None:
         session.close()
 
 
+def test_source_playlist_api_returns_latest_completed_version() -> None:
+    client, session = make_client()
+    try:
+        playlist = SourcePlaylist(
+            name="Test Playlist",
+            source_type="text",
+            source_location="test",
+            entry_count=2,
+        )
+        session.add(playlist)
+        session.flush()
+        session.add_all(
+            [
+                SourcePlaylistVersion(
+                    source_playlist_id=playlist.id,
+                    version_number=1,
+                    content_hash="a" * 64,
+                    entry_count=2,
+                    status="completed",
+                ),
+                SourcePlaylistVersion(
+                    source_playlist_id=playlist.id,
+                    version_number=2,
+                    content_hash="b" * 64,
+                    entry_count=3,
+                    status="completed",
+                ),
+                SourcePlaylistVersion(
+                    source_playlist_id=playlist.id,
+                    version_number=3,
+                    content_hash="c" * 64,
+                    entry_count=4,
+                    status="importing",
+                ),
+            ]
+        )
+        session.commit()
+
+        response = client.get("/api/source-playlists")
+        assert response.status_code == 200
+        assert response.json() == [
+            {
+                "id": playlist.id,
+                "name": "Test Playlist",
+                "source_type": "text",
+                "source_location": "test",
+                "entry_count": 2,
+                "latest_version_id": playlist.versions[1].id,
+                "latest_version_number": 2,
+                "latest_version_entry_count": 3,
+            }
+        ]
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
 def test_performance_api_returns_channel_and_stream_metrics() -> None:
     client, session = make_client()
     try:
