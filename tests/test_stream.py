@@ -46,6 +46,19 @@ class _MediaStdout(_FakePipe):
         return b""
 
 
+class _PlaybackStderr(_FakePipe):
+    def __init__(self, released: threading.Event) -> None:
+        super().__init__()
+        self.released = released
+
+    def __iter__(self):
+        yield b"Stream #0:0: Video: h264, 854x480\n"
+        yield b"Stream #0:1: Audio: aac\n"
+        yield b"[Parsed_showinfo_0] n:   0 pts:      0 pts_time:0.000\n"
+        yield b"[Parsed_showinfo_0] n:   1 pts:   40000 pts_time:0.040\n"
+        self.released.wait(timeout=1.0)
+
+
 class _FakeProcess:
     def __init__(self, stderr: _FakePipe, stdout: _FakePipe) -> None:
         self.stderr = stderr
@@ -59,7 +72,7 @@ class _FakeProcess:
     def kill(self) -> None:
         self.returncode = -9
         self.killed.set()
-        if isinstance(self.stderr, _BlockingStderr):
+        if isinstance(self.stderr, (_BlockingStderr, _PlaybackStderr)):
             self.stderr.released.set()
 
     def wait(self) -> int:
@@ -81,14 +94,8 @@ def _patch_popen(monkeypatch, process: _FakeProcess) -> list[list[str]]:
 
 
 def test_stream_test_measures_media_throughput_from_same_session(monkeypatch) -> None:
-    stderr = _FakePipe(
-        [
-            b"Stream #0:0: Video: h264, 854x480\n",
-            b"Stream #0:1: Audio: aac\n",
-            b"[Parsed_showinfo_0] n:   0 pts:      0 pts_time:0.000\n",
-            b"[Parsed_showinfo_0] n:   1 pts:   40000 pts_time:0.040\n",
-        ]
-    )
+    released = threading.Event()
+    stderr = _PlaybackStderr(released)
     stdout = _MediaStdout()
     process = _FakeProcess(stderr, stdout)
     calls = _patch_popen(monkeypatch, process)
