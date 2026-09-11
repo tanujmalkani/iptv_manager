@@ -10,11 +10,16 @@ def _test(
     available: bool,
     first_frame_ms: float | None,
     minute: int,
+    test_type: str = "quick",
+    error_type: str | None = None,
 ) -> SimpleNamespace:
     completed_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=minute)
     return SimpleNamespace(
         stream_id=stream_id,
         available=available,
+        result="success" if available else "failed",
+        test_type=test_type,
+        error_type=error_type,
         first_frame_ms=first_frame_ms,
         throughput_bps=4_000_000 if available else None,
         extra_metrics={"stable": available, "observed_fps": 25.0 if available else None},
@@ -73,3 +78,26 @@ def test_all_profile_keeps_all_successful_candidates() -> None:
 
     assert {item.performance.stream_id for item in result.candidates} == {10, 20}
     assert result.primary_stream_id == 10
+
+
+def test_fast_profile_accepts_successful_deep_validation_after_quick_decoder_failure() -> None:
+    tests = {
+        10: [
+            _test(
+                10,
+                available=False,
+                first_frame_ms=None,
+                minute=0,
+                test_type="quick",
+                error_type="decoder_error",
+            ),
+            _test(10, available=False, first_frame_ms=None, minute=1, test_type="quick"),
+            _test(10, available=True, first_frame_ms=120, minute=2, test_type="deep"),
+        ],
+        20: [_test(20, available=True, first_frame_ms=500, minute=3)],
+    }
+
+    result = build_channel_optimization(_channel(), tests, profile=OptimizationProfile.FAST)
+
+    assert result.primary_stream_id == 10
+    assert [item.performance.stream_id for item in result.candidates] == [10, 20]
