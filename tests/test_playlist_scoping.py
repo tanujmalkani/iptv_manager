@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -11,9 +13,12 @@ from app.db.models import (
     SourcePlaylist,
     SourcePlaylistVersion,
     Stream,
+    StreamTest,
+    TestRun,
 )
 from app.db.session import get_db
 from app.main import app
+from app.performance.channels import get_channels_performance
 
 
 def test_channels_api_can_be_scoped_to_source_playlist() -> None:
@@ -107,4 +112,122 @@ def test_channels_api_can_be_scoped_to_source_playlist() -> None:
         assert [item["channel_name"] for item in response.json()] == ["Beta"]
     finally:
         app.dependency_overrides.clear()
+        session.close()
+
+
+def test_performance_ranking_is_scoped_to_source_playlist() -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+
+    playlist_a = SourcePlaylist(
+        name="Playlist A",
+        source_type="text",
+        source_location="a",
+    )
+    playlist_b = SourcePlaylist(
+        name="Playlist B",
+        source_type="text",
+        source_location="b",
+    )
+    version_a = SourcePlaylistVersion(
+        source_playlist=playlist_a,
+        version_number=1,
+        content_hash="a" * 64,
+        entry_count=1,
+        status="completed",
+    )
+    version_b = SourcePlaylistVersion(
+        source_playlist=playlist_b,
+        version_number=1,
+        content_hash="b" * 64,
+        entry_count=1,
+        status="completed",
+    )
+    channel = Channel(canonical_name="Shared", normalized_name="shared")
+    stream_a = Stream(
+        url="https://example.test/fast.m3u8",
+        normalized_url="https://example.test/fast.m3u8",
+        stream_kind="media_playlist",
+    )
+    stream_b = Stream(
+        url="https://example.test/slow.m3u8",
+        normalized_url="https://example.test/slow.m3u8",
+        stream_kind="media_playlist",
+    )
+    run_a = TestRun(name="A", source_playlist_id=playlist_a.id)
+    run_b = TestRun(name="B", source_playlist_id=playlist_b.id)
+    session.add_all([
+        playlist_a,
+        playlist_b,
+        version_a,
+        version_b,
+        channel,
+        stream_a,
+        stream_b,
+    ])
+    session.flush()
+    run_a.source_playlist_id = playlist_a.id
+    run_b.source_playlist_id = playlist_b.id
+    session.add_all([
+        ChannelStream(channel_id=channel.id, stream_id=stream_a.id),
+        ChannelStream(channel_id=channel.id, stream_id=stream_b.id),
+        PlaylistEntry(
+            source_playlist_version_id=version_a.id,
+            channel_id=channel.id,
+            stream_id=stream_a.id,
+            original_position=0,
+            original_name="Shared",
+        ),
+        PlaylistEntry(
+            source_playlist_version_id=version_b.id,
+            channel_id=channel.id,
+            stream_id=stream_b.id,
+            original_position=0,
+            original_name="Shared",
+        ),
+        run_a,
+        run_b,
+    ])
+    session.flush()
+    now = datetime.now(UTC)
+    session.add_all([
+        StreamTest(
+            test_run_id=run_a.id,
+            stream_id=stream_a.id,
+            test_type="deep",
+            result="success",
+            available=True,
+            first_frame_ms=100,
+            completed_at=now,
+            extra_metrics={"stable": True, "playback_duration_ms": 10_000},
+        ),
+        StreamTest(
+            test_run_id=run_b.id,
+            stream_id=stream_b.id,
+            test_type="deep",
+            result="success",
+            available=True,
+            first_frame_ms=900,
+            completed_at=now,
+            extra_metrics={"stable": True, "playback_duration_ms": 10_000},
+        ),
+    ])
+    session.commit()
+
+    try:
+        performance_a = get_channels_performance(session, source_playlist_id=playlist_a.id)
+        performance_b = get_channels_performance(session, source_playlist_id=playlist_b.id)
+
+        assert len(performance_a) == 1
+        assert len(performance_b) == 1
+        assert [item.stream_id for item in performance_a[0].streams] == [stream_a.id]
+        assert [item.stream_id for item in performance_b[0].streams] == [stream_b.id]
+        assert performance_a[0].primary_stream_id == stream_a.id
+        assert performance_b[0].primary_stream_id == stream_b.id
+    finally:
         session.close()
