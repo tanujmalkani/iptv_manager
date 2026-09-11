@@ -12,7 +12,7 @@ from app.db.models.enums import TestRunStatus, TestType
 from app.db.session import SessionLocal, get_db
 from app.testing.campaign import TestCampaignRunner
 from app.testing.deep import DeepTestEngine
-from app.testing.quick import QuickTestEngine
+from app.testing.quick import QuickTestEngine, QuickTestRunner
 
 router = APIRouter(prefix="/api", tags=["testing"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -125,16 +125,7 @@ def start_stream_tests(
     else:
         engine = QuickTestEngine(timeout_seconds=timeout_seconds, ffmpeg_binary=ffmpeg_binary)
 
-    streams = TestCampaignRunner(
-        engine,
-        test_type=test_type,
-        concurrency=concurrency,
-    )._test_streams
-    # Use the existing runner selection logic without executing the campaign in the request.
-    from app.testing.quick import QuickTestRunner
-
     selected_streams = QuickTestRunner(engine)._select_streams(session, source_playlist_id, None)
-    del streams
     test_run = TestRun(
         source_playlist_id=source_playlist_id,
         name=f"{test_type.title()} Test",
