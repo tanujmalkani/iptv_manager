@@ -31,7 +31,7 @@ def make_client() -> tuple[TestClient, Session]:
     return TestClient(app), session
 
 
-def test_playlist_profile_can_save_order_and_selection() -> None:
+def test_playlist_profile_can_save_order_selection_and_optimization_mode() -> None:
     client, session = make_client()
     try:
         playlist = SourcePlaylist(name="Test", source_type="text", source_location="test")
@@ -83,6 +83,7 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
         payload = {
             "name": "Living Room",
             "source_playlist_id": playlist.id,
+            "stream_mode": "reliable",
             "entries": [
                 {
                     "channel_id": second.id,
@@ -97,6 +98,7 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
         assert response.status_code == 201
         body = response.json()
         assert body["name"] == "Living Room"
+        assert body["stream_mode"] == "reliable"
         actual_entries = [
             (
                 item["channel_id"],
@@ -116,6 +118,7 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
             f"/api/playlist-profiles/{profile_id}",
             json={
                 **payload,
+                "stream_mode": "fast",
                 "entries": [
                     {
                         "channel_id": first.id,
@@ -128,7 +131,9 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
             },
         )
         assert response.status_code == 200
-        updated_entries = response.json()["entries"]
+        body = response.json()
+        assert body["stream_mode"] == "fast"
+        updated_entries = body["entries"]
         assert [item["channel_id"] for item in updated_entries] == [first.id, second.id]
         assert updated_entries[0]["selected_stream_id"] == first_stream.id
     finally:
