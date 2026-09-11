@@ -142,10 +142,10 @@ class TestCampaignRunner:
             if cancel_event is not None and cancel_event.is_set():
                 cancelled = True
             executor.shutdown(wait=True, cancel_futures=cancelled)
-            if cancelled:
-                for future in futures:
-                    if future.cancelled():
-                        cancelled = True
+            for future, stream_id in futures.items():
+                if stream_id in results or future.cancelled() or not future.done():
+                    continue
+                results[stream_id] = future.result()
         return results, cancelled
 
     def _safe_test(self, url: str) -> QuickTestResult:
