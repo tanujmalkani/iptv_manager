@@ -94,10 +94,11 @@ def test_campaign_records_worker_exceptions_as_failed_results() -> None:
     session = make_session()
     try:
         streams = add_streams(session, 2)
+        failing_url = streams[1].url
 
         class FailingEngine(FakeCampaignEngine):
             def test(self, url: str) -> QuickTestResult:
-                if url == streams[1].url:
+                if url == failing_url:
                     raise RuntimeError("worker exploded")
                 return super().test(url)
 
