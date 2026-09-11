@@ -14,6 +14,7 @@ from app.db.models import (
     SourcePlaylistVersion,
     Stream,
     StreamTest,
+    StreamVariant,
     TestRun,
 )
 from app.db.session import get_db
@@ -230,4 +231,79 @@ def test_performance_ranking_is_scoped_to_source_playlist() -> None:
         assert performance_a[0].primary_stream_id == stream_a.id
         assert performance_b[0].primary_stream_id == stream_b.id
     finally:
+        session.close()
+
+
+def test_playlist_scope_includes_playable_hls_children_and_detail_matches_summary() -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+
+    playlist = SourcePlaylist(name="HLS Playlist", source_type="text", source_location="hls")
+    version = SourcePlaylistVersion(
+        source_playlist=playlist,
+        version_number=1,
+        content_hash="c" * 64,
+        entry_count=1,
+        status="completed",
+    )
+    channel = Channel(canonical_name="HLS Channel", normalized_name="hls channel")
+    master = Stream(
+        url="https://example.test/master.m3u8",
+        normalized_url="https://example.test/master.m3u8",
+        stream_kind="master_playlist",
+    )
+    child_1080 = Stream(
+        url="https://example.test/1080.m3u8",
+        normalized_url="https://example.test/1080.m3u8",
+        stream_kind="media_playlist",
+    )
+    child_720 = Stream(
+        url="https://example.test/720.m3u8",
+        normalized_url="https://example.test/720.m3u8",
+        stream_kind="media_playlist",
+    )
+    session.add_all([playlist, version, channel, master, child_1080, child_720])
+    session.flush()
+    session.add_all([
+        ChannelStream(channel_id=channel.id, stream_id=master.id),
+        ChannelStream(channel_id=channel.id, stream_id=child_1080.id),
+        ChannelStream(channel_id=channel.id, stream_id=child_720.id),
+        PlaylistEntry(
+            source_playlist_version_id=version.id,
+            channel_id=channel.id,
+            stream_id=master.id,
+            original_position=0,
+            original_name="HLS Channel",
+        ),
+        StreamVariant(parent_stream_id=master.id, variant_stream_id=child_1080.id),
+        StreamVariant(parent_stream_id=master.id, variant_stream_id=child_720.id),
+    ])
+    session.commit()
+
+    def override_get_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    try:
+        summary = client.get(f"/api/channels?source_playlist_id={playlist.id}")
+        assert summary.status_code == 200
+        item = summary.json()[0]
+        assert item["stream_count"] == 2
+        assert item["tested_stream_count"] == 0
+
+        detail = client.get(f"/api/channels/{channel.id}?source_playlist_id={playlist.id}")
+        assert detail.status_code == 200
+        assert len(detail.json()["streams"]) == 2
+        assert {stream["stream_id"] for stream in detail.json()["streams"]} == {
+            child_1080.id,
+            child_720.id,
+        }
+    finally:
+        app.dependency_overrides.clear()
         session.close()
