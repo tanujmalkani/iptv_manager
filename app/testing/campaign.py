@@ -109,7 +109,9 @@ class TestCampaignRunner:
         test_run.completed_at = _utcnow()
         test_run.total_streams = len(streams)
         test_run.completed_streams = len(results)
-        test_run.successful_streams = sum(1 for result in results.values() if result.result == TestResult.SUCCESS)
+        test_run.successful_streams = sum(
+            1 for result in results.values() if result.result == TestResult.SUCCESS
+        )
         test_run.failed_streams = test_run.completed_streams - test_run.successful_streams
         session.commit()
         return test_run
