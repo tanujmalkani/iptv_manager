@@ -7,13 +7,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.schemas import OptimizationPlanResponse
-from app.db.models import Channel, PlaylistEntry, SourcePlaylistVersion, Stream, StreamTest
+from app.db.models import (
+    Channel,
+    PlaylistEntry,
+    SourcePlaylistVersion,
+    Stream,
+    StreamTest,
+)
 from app.db.models.enums import VersionStatus
 from app.db.session import get_db
-from app.optimization import (
-    OptimizationProfile,
-    build_optimization_plan,
-)
+from app.optimization import OptimizationProfile, build_optimization_plan
 
 router = APIRouter(prefix="/api", tags=["optimization"])
 DbSession = Annotated[Session, Depends(get_db)]
