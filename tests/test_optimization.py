@@ -2,10 +2,15 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from app.optimization import OptimizationProfile, build_channel_optimization
-from app.performance.aggregation import aggregate_stream_tests
 
 
-def _test(stream_id: int, *, available: bool, first_frame_ms: float | None, minute: int) -> SimpleNamespace:
+def _test(
+    stream_id: int,
+    *,
+    available: bool,
+    first_frame_ms: float | None,
+    minute: int,
+) -> SimpleNamespace:
     completed_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=minute)
     return SimpleNamespace(
         stream_id=stream_id,
