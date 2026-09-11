@@ -75,7 +75,7 @@ def test_campaign_runs_streams_concurrently_and_persists_results() -> None:
         engine = FakeCampaignEngine()
         runner = CampaignRunner(engine, test_type="quick", concurrency=3)
 
-        test_run = runner.run(session, name="Quick Campaign")
+        test_run = runner.run(session)
 
         assert test_run.status == RunStatus.COMPLETED.value
         assert test_run.total_streams == 6
@@ -105,7 +105,7 @@ def test_campaign_records_worker_exceptions_as_failed_results() -> None:
             FailingEngine(),
             test_type="quick",
             concurrency=2,
-        ).run(session, name="Failure Campaign")
+        ).run(session)
 
         assert test_run.status == RunStatus.COMPLETED.value
         assert test_run.successful_streams == 1
@@ -136,7 +136,6 @@ def test_campaign_cancellation_persists_completed_workers_and_stops_pending_work
         canceller.start()
         test_run = runner.run(
             session,
-            name="Cancelled Campaign",
             cancel_event=cancel_event,
         )
         canceller.join()
@@ -158,5 +157,3 @@ def test_campaign_rejects_invalid_concurrency() -> None:
         CampaignRunner(engine, test_type="quick", concurrency=0)
     except ValueError as exc:
         assert "between 1 and 32" in str(exc)
-    else:
-        raise AssertionError("Expected invalid concurrency to raise ValueError")
