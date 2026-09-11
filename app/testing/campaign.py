@@ -50,6 +50,7 @@ class TestCampaignRunner:
         streams = selector._select_streams(session, source_playlist_id, stream_ids)
         if test_run is None:
             test_run = TestRun(
+                name=f"{self.test_type.title()} Campaign",
                 profile=self.test_type,
                 status=TestRunStatus.PENDING,
                 started_at=_utcnow(),
@@ -83,10 +84,21 @@ class TestCampaignRunner:
                 attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
                 started_at=started_at,
                 completed_at=_utcnow(),
-                result=TestResult.SUCCESS if result.success else TestResult.FAILURE,
-                error_type=result.error_type or ErrorType.NONE,
+                result=result.result,
+                available=result.available,
+                error_stage=result.error_stage,
+                error_type=result.error_type,
                 error_message=result.error_message,
-                metrics_json=result.metrics,
+                dns_ms=result.dns_ms,
+                connect_ms=result.connect_ms,
+                tls_ms=result.tls_ms,
+                http_response_ms=result.http_response_ms,
+                manifest_ms=result.manifest_ms,
+                first_data_ms=result.first_data_ms,
+                first_frame_ms=result.first_frame_ms,
+                bytes_received=result.bytes_received,
+                test_duration_ms=result.test_duration_ms,
+                extra_metrics=result.extra_metrics,
             )
             session.add(stream_test)
         test_run.configuration_json = {
@@ -95,6 +107,10 @@ class TestCampaignRunner:
         }
         test_run.status = TestRunStatus.CANCELLED if cancelled else TestRunStatus.COMPLETED
         test_run.completed_at = _utcnow()
+        test_run.total_streams = len(streams)
+        test_run.completed_streams = len(results)
+        test_run.successful_streams = sum(1 for result in results.values() if result.available)
+        test_run.failed_streams = test_run.completed_streams - test_run.successful_streams
         session.commit()
         return test_run
 
@@ -140,10 +156,11 @@ class TestCampaignRunner:
             return self.engine.test(url, deep=False)
         except Exception as exc:  # noqa: BLE001
             return QuickTestResult(
-                success=False,
-                error_type=ErrorType.EXCEPTION.value,
+                result=TestResult.FAILURE,
+                available=False,
+                error_stage="runner",
+                error_type=ErrorType.EXCEPTION,
                 error_message=str(exc),
-                metrics={},
             )
 
     @staticmethod
