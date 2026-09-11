@@ -136,12 +136,16 @@ def preview_m3u(
 
     selected_entries = _select_entries(source_by_channel, profile)
     selected_channel_ids = {entry.channel_id for entry in selected_entries}
-    playlist_stream_entries = session.scalars(
-        select(PlaylistEntry).where(
-            PlaylistEntry.source_playlist_version_id == version.id,
-            PlaylistEntry.channel_id.in_(selected_channel_ids),
-        )
-    ).all() if selected_channel_ids else []
+    playlist_stream_entries = (
+        session.scalars(
+            select(PlaylistEntry).where(
+                PlaylistEntry.source_playlist_version_id == version.id,
+                PlaylistEntry.channel_id.in_(selected_channel_ids),
+            )
+        ).all()
+        if selected_channel_ids
+        else []
+    )
     all_candidate_stream_ids = {entry.stream_id for entry in playlist_stream_entries}
 
     optimization = None
@@ -166,11 +170,13 @@ def preview_m3u(
 
     for entry in selected_entries:
         profile_entry = profile_entries.get(entry.channel_id)
-        (
-            chosen_stream_id,
-            used_fallback,
-            invalid_reason,
-        ) = _resolve_stream_choice(session, version.id, entry, profile_entry, optimization)
+        chosen_stream_id, used_fallback, invalid_reason = _resolve_stream_choice(
+            session,
+            version.id,
+            entry,
+            profile_entry,
+            optimization,
+        )
 
         if profile_entry and profile_entry.selected_stream_id is not None:
             manual_count += 1
@@ -183,6 +189,7 @@ def preview_m3u(
         elif optimization is not None:
             automatic_count += 1
             if used_fallback:
+                fallback_count += 1
                 warnings.append(
                     f"{entry.channel.canonical_name}: no eligible tested stream for "
                     f"{optimization_profile.value} optimization; source stream retained"
@@ -262,7 +269,7 @@ def _resolve_stream_choice(
         if chosen_stream is None:
             return chosen_stream_id, True, "is missing from the database"
         if chosen_stream.stream_kind == "master_playlist":
-            return chosen_stream_id, True, "is a master playlist"
+            return entry.stream_id, True, "is a master playlist"
         if not _stream_belongs_to_channel(session, version_id, entry.channel_id, explicit_stream_id):
             return chosen_stream_id, True, "is not a valid playable option for this playlist version"
         return explicit_stream_id, False, None
@@ -336,8 +343,7 @@ def _build_optimization(
         .order_by(Channel.canonical_name, Channel.id)
     ).all()
     playlist_entries = session.scalars(
-        select(PlaylistEntry)
-        .where(
+        select(PlaylistEntry).where(
             PlaylistEntry.source_playlist_version_id == version_id,
             PlaylistEntry.channel_id.in_(channel_ids),
         )
@@ -366,9 +372,7 @@ def _build_optimization(
 def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tuple[int, int]]:
     if not stream_ids:
         return {}
-    tests = session.scalars(
-        select(StreamTest).where(StreamTest.stream_id.in_(stream_ids))
-    ).all()
+    tests = session.scalars(select(StreamTest).where(StreamTest.stream_id.in_(stream_ids))).all()
     stats: dict[int, tuple[int, int]] = {}
     for test in tests:
         total, successful = stats.get(test.stream_id, (0, 0))
@@ -376,12 +380,7 @@ def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tupl
     return stats
 
 
-def _stream_belongs_to_channel(
-    session: Session,
-    version_id: int,
-    channel_id: int,
-    stream_id: int,
-) -> bool:
+def _stream_belongs_to_channel(session: Session, version_id: int, channel_id: int, stream_id: int) -> bool:
     return session.scalar(
         select(PlaylistEntry.id)
         .join(Stream, Stream.id == PlaylistEntry.stream_id)
