@@ -13,6 +13,7 @@ from app.db.models import (
     SourcePlaylistVersion,
     Stream,
     StreamTest,
+    StreamVariant,
 )
 from app.db.models.enums import VersionStatus
 from app.db.session import get_db
@@ -53,6 +54,14 @@ def get_playlist_optimization(
         if stream_id is not None:
             stream_ids_by_channel.setdefault(channel_id, set()).add(stream_id)
 
+    root_stream_ids = {stream_id for ids in stream_ids_by_channel.values() for stream_id in ids}
+    discovered_ids_by_root = _load_discovered_stream_ids(session, root_stream_ids)
+    for channel_id, root_ids in list(stream_ids_by_channel.items()):
+        expanded = set(root_ids)
+        for root_id in root_ids:
+            expanded.update(discovered_ids_by_root.get(root_id, set()))
+        stream_ids_by_channel[channel_id] = expanded
+
     channels = session.scalars(
         select(Channel)
         .options(selectinload(Channel.streams))
@@ -92,3 +101,42 @@ def get_playlist_optimization(
         profile,
     )
     return OptimizationPlanResponse.from_model(plan, version.version_number)
+
+
+def _load_discovered_stream_ids(
+    session: Session,
+    root_stream_ids: set[int],
+) -> dict[int, set[int]]:
+    """Return all recursively discovered descendant streams for each root stream."""
+    descendants_by_root: dict[int, set[int]] = {
+        root_id: set() for root_id in root_stream_ids
+    }
+    frontier = set(root_stream_ids)
+    root_by_frontier: dict[int, set[int]] = {
+        stream_id: {stream_id} for stream_id in root_stream_ids
+    }
+
+    while frontier:
+        rows = session.execute(
+            select(StreamVariant.parent_stream_id, StreamVariant.variant_stream_id).where(
+                StreamVariant.parent_stream_id.in_(frontier)
+            )
+        ).all()
+        next_frontier: set[int] = set()
+        next_root_map: dict[int, set[int]] = {}
+        for parent_id, child_id in rows:
+            roots = root_by_frontier.get(parent_id, set())
+            if not roots:
+                continue
+            for root_id in roots:
+                if child_id in descendants_by_root[root_id]:
+                    continue
+                descendants_by_root[root_id].add(child_id)
+                next_root_map.setdefault(child_id, set()).add(root_id)
+            if child_id not in frontier:
+                next_frontier.add(child_id)
+
+        frontier = next_frontier
+        root_by_frontier = next_root_map
+
+    return descendants_by_root
