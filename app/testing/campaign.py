@@ -47,6 +47,7 @@ class TestCampaignRunner:
         self,
         session: Session,
         *,
+        name: str | None = None,
         source_playlist_id: int | None = None,
         stream_ids: set[int] | None = None,
         test_run: TestRun | None = None,
@@ -56,7 +57,8 @@ class TestCampaignRunner:
         streams = selector._select_streams(session, source_playlist_id, stream_ids)
         if test_run is None:
             test_run = TestRun(
-                name=f"{self.test_type.title()} Campaign",
+                source_playlist_id=source_playlist_id,
+                name=name or f"{self.test_type.title()} Campaign",
                 profile=self.test_type,
                 status=TestRunStatus.PENDING,
                 started_at=_utcnow(),
