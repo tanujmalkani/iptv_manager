@@ -107,9 +107,13 @@ class TestCampaignRunner:
             )
             session.add(stream_test)
 
-        successful_streams = sum(
-            1 for result in results.values() if _enum_value(result.result) == TestResult.SUCCESS.value
-        )
+        session.flush()
+        successful_streams = session.scalar(
+            select(func.count(StreamTest.id)).where(
+                StreamTest.test_run_id == test_run.id,
+                StreamTest.result == TestResult.SUCCESS.value,
+            )
+        ) or 0
         test_run.configuration_json = {
             **(test_run.configuration_json or {}),
             "cancelled": cancelled,
