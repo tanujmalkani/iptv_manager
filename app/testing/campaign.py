@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from threading import Event
@@ -81,6 +80,7 @@ class TestCampaignRunner:
                 stream_id=stream.id,
                 test_run_id=test_run.id,
                 test_type=self.test_type,
+                attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
                 started_at=started_at,
                 completed_at=_utcnow(),
                 result=TestResult.SUCCESS if result.success else TestResult.FAILURE,
