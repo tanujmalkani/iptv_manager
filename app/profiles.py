@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Channel, PlaylistEntry, PlaylistProfile, PlaylistProfileEntry, PlaylistProfileGroup
+from app.db.models import (
+    PlaylistEntry,
+    PlaylistProfile,
+    PlaylistProfileEntry,
+    PlaylistProfileGroup,
+    SourcePlaylistVersion,
+)
 from app.db.models.enums import VersionStatus
 
 
@@ -91,23 +97,6 @@ def _validate_entries(
         raise ValueError("A channel may appear only once in a profile")
 
     latest_version = session.scalar(
-        select(PlaylistProfileEntry)
-        .where(False)
-    )
-    del latest_version
-    version_id = session.scalar(
-        select(PlaylistEntry.source_playlist_version_id)
-        .join(
-            PlaylistProfile,
-            PlaylistProfile.source_playlist_id == source_playlist_id,
-            isouter=True,
-        )
-        .where(False)
-    )
-    del version_id
-    from app.db.models import SourcePlaylistVersion
-
-    latest_version = session.scalar(
         select(SourcePlaylistVersion)
         .where(
             SourcePlaylistVersion.source_playlist_id == source_playlist_id,
@@ -130,21 +119,20 @@ def _validate_entries(
     if missing:
         raise ValueError("Profile contains channels that are not in the source playlist")
 
-    if entries:
-        stream_ids = {entry.selected_stream_id for entry in entries if entry.selected_stream_id is not None}
-        if stream_ids:
-            valid_streams = set(
-                session.scalars(
-                    select(PlaylistEntry.stream_id)
-                    .where(
-                        PlaylistEntry.source_playlist_version_id == latest_version.id,
-                        PlaylistEntry.stream_id.in_(stream_ids),
-                    )
-                    .distinct()
-                ).all()
-            )
-            if stream_ids - valid_streams:
-                raise ValueError("Profile contains streams that are not in the source playlist")
+    stream_ids = {entry.selected_stream_id for entry in entries if entry.selected_stream_id is not None}
+    if stream_ids:
+        valid_streams = set(
+            session.scalars(
+                select(PlaylistEntry.stream_id)
+                .where(
+                    PlaylistEntry.source_playlist_version_id == latest_version.id,
+                    PlaylistEntry.stream_id.in_(stream_ids),
+                )
+                .distinct()
+            ).all()
+        )
+        if stream_ids - valid_streams:
+            raise ValueError("Profile contains streams that are not in the source playlist")
 
 
 def _replace_entries(
@@ -154,6 +142,10 @@ def _replace_entries(
 ) -> None:
     for entry in list(profile.entries):
         session.delete(entry)
+    session.flush()
+
+    for group in list(profile.groups):
+        session.delete(group)
     session.flush()
 
     groups: dict[str, PlaylistProfileGroup] = {}
