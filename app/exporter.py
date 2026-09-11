@@ -14,7 +14,11 @@ from app.db.models import (
     StreamTest,
 )
 from app.db.models.enums import VersionStatus
-from app.optimization import OptimizationProfile, build_optimization_plan
+from app.optimization import (
+    OptimizationProfile,
+    build_optimization_plan,
+    load_playlist_stream_ids,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,17 +140,12 @@ def preview_m3u(
 
     selected_entries = _select_entries(source_by_channel, profile)
     selected_channel_ids = {entry.channel_id for entry in selected_entries}
-    playlist_stream_entries = (
-        session.scalars(
-            select(PlaylistEntry).where(
-                PlaylistEntry.source_playlist_version_id == version.id,
-                PlaylistEntry.channel_id.in_(selected_channel_ids),
-            )
-        ).all()
-        if selected_channel_ids
-        else []
-    )
-    all_candidate_stream_ids = {entry.stream_id for entry in playlist_stream_entries}
+    playlist_stream_ids_by_channel = load_playlist_stream_ids(session, version.id)
+    all_candidate_stream_ids = {
+        stream_id
+        for channel_id in selected_channel_ids
+        for stream_id in playlist_stream_ids_by_channel.get(channel_id, set())
+    }
 
     optimization = None
     if optimization_profile is not None and selected_entries:
@@ -348,13 +347,12 @@ def _build_optimization(
         .where(Channel.id.in_(channel_ids))
         .order_by(Channel.canonical_name, Channel.id)
     ).all()
-    playlist_entries = session.scalars(
-        select(PlaylistEntry).where(
-            PlaylistEntry.source_playlist_version_id == version_id,
-            PlaylistEntry.channel_id.in_(channel_ids),
-        )
-    ).all()
-    stream_ids = {entry.stream_id for entry in playlist_entries}
+    stream_ids_by_channel = load_playlist_stream_ids(session, version_id)
+    stream_ids = {
+        stream_id
+        for channel_id in channel_ids
+        for stream_id in stream_ids_by_channel.get(channel_id, set())
+    }
     tests = (
         session.scalars(
             select(StreamTest)
@@ -368,9 +366,9 @@ def _build_optimization(
     for test in tests:
         tests_by_stream.setdefault(test.stream_id, []).append(test)
 
-    stream_ids_by_channel: dict[int, set[int]] = {channel.id: set() for channel in channels}
-    for entry in playlist_entries:
-        stream_ids_by_channel.setdefault(entry.channel_id, set()).add(entry.stream_id)
+    stream_ids_by_channel = {
+        channel.id: stream_ids_by_channel.get(channel.id, set()) for channel in channels
+    }
     plan = build_optimization_plan(channels, tests_by_stream, stream_ids_by_channel, profile)
     return {item.channel_id: item for item in plan.channels}
 
@@ -392,17 +390,7 @@ def _stream_belongs_to_channel(
     channel_id: int,
     stream_id: int,
 ) -> bool:
-    return session.scalar(
-        select(PlaylistEntry.id)
-        .join(Stream, Stream.id == PlaylistEntry.stream_id)
-        .where(
-            PlaylistEntry.source_playlist_version_id == version_id,
-            PlaylistEntry.channel_id == channel_id,
-            PlaylistEntry.stream_id == stream_id,
-            Stream.stream_kind != "master_playlist",
-        )
-        .limit(1)
-    ) is not None
+    return stream_id in load_playlist_stream_ids(session, version_id).get(channel_id, set())
 
 
 def _get_version(
