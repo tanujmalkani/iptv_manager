@@ -10,9 +10,26 @@ from app.api.schemas import ExportPreviewResponse
 from app.db.session import get_db
 from app.exporter import export_m3u, export_optimized_m3u, preview_m3u
 from app.optimization import OptimizationProfile
+from app.profiles import get_profile
 
 router = APIRouter(prefix="/api", tags=["export"])
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+def _effective_optimization_profile(
+    session: Session,
+    playlist_profile_id: int | None,
+    optimization_profile: OptimizationProfile | None,
+) -> OptimizationProfile | None:
+    if optimization_profile is not None or playlist_profile_id is None:
+        return optimization_profile
+    profile = get_profile(session, playlist_profile_id)
+    if profile is None or profile.stream_mode == "source":
+        return None
+    try:
+        return OptimizationProfile(profile.stream_mode)
+    except ValueError:
+        return None
 
 
 @router.get("/source-playlists/{source_playlist_id}/export-preview")
@@ -24,11 +41,16 @@ def preview_source_playlist(
     version_id: int | None = None,
 ) -> ExportPreviewResponse:
     """Preview the exact export selection and validation warnings."""
+    effective_profile = _effective_optimization_profile(
+        session,
+        playlist_profile_id,
+        optimization_profile,
+    )
     preview = preview_m3u(
         session,
         source_playlist_id,
         version_id=version_id,
-        optimization_profile=optimization_profile,
+        optimization_profile=effective_profile,
         playlist_profile_id=playlist_profile_id,
     )
     if preview is None:
@@ -45,11 +67,16 @@ def export_source_playlist(
     version_id: int | None = None,
 ) -> PlainTextResponse:
     """Export an original or custom playlist with optional optimization."""
+    effective_profile = _effective_optimization_profile(
+        session,
+        playlist_profile_id,
+        optimization_profile,
+    )
     result = export_m3u(
         session,
         source_playlist_id,
         version_id=version_id,
-        optimization_profile=optimization_profile,
+        optimization_profile=effective_profile,
         playlist_profile_id=playlist_profile_id,
     )
     if result is None:
@@ -58,7 +85,7 @@ def export_source_playlist(
     parts = ["iptv-manager"]
     if playlist_profile_id is not None:
         parts.append(f"profile-{playlist_profile_id}")
-    parts.append(optimization_profile.value if optimization_profile else "original")
+    parts.append(effective_profile.value if effective_profile else "original")
     filename = f"{'-'.join(parts)}-v{result.source_playlist_version_number}.m3u"
     return PlainTextResponse(
         result.content,
