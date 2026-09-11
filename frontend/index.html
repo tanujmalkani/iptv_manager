@@ -53,6 +53,21 @@
       <div id="optimization-channels" class="optimization-channel-list"></div>
     </section>
 
+    <section id="export-preview" class="panel export-preview" hidden>
+      <div class="panel-title">
+        <div>
+          <h2>Export validation</h2>
+          <p id="export-preview-summary" class="meta"></p>
+        </div>
+        <div class="export-preview-actions">
+          <button id="export-cancel" type="button">Cancel</button>
+          <button id="export-confirm" type="button">Export M3U</button>
+        </div>
+      </div>
+      <div id="export-preview-metrics" class="export-preview-metrics"></div>
+      <div id="export-preview-warnings" class="export-preview-warnings"></div>
+    </section>
+
     <section id="test-progress" class="progress" hidden>
       <div class="progress-head"><strong id="test-progress-label">Stream test</strong><span id="test-progress-count" class="meta"></span></div>
       <div class="progress-track"><div id="test-progress-bar" class="progress-bar"></div></div>
@@ -72,6 +87,7 @@
       </section>
     </section>
   </main>
+  <script src="/frontend/export-preview.js"></script>
   <script src="/frontend/app.js"></script>
   <script src="/frontend/optimization.js"></script>
 </body>
