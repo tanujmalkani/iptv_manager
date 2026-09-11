@@ -382,7 +382,7 @@ def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tupl
     stats: dict[int, tuple[int, int]] = {}
     for test in tests:
         total, successful = stats.get(test.stream_id, (0, 0))
-        stats[test.stream_id] = (total + 1, successful + int(test.success))
+        stats[test.stream_id] = (total + 1, successful + int(test.result == "success"))
     return stats
 
 
