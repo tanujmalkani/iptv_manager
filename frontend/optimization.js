@@ -64,10 +64,12 @@ async function applyOptimizationRecommendations() {
     if (state.profileId == null) {
       $("profile-name").focus();
       $("status").textContent = `Applied ${applied} recommendations; ${skipped} existing selections preserved. Enter a profile name and click Save Profile.`;
+      await loadOptimizationPlan();
       return;
     }
 
     await saveProfile();
+    await loadOptimizationPlan();
     if (applied === 0) {
       $("status").textContent = `No new ${optimizationLabel(profile)} recommendations applied; existing selections were preserved.`;
     }
