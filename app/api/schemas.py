@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import SourcePlaylist, SourcePlaylistVersion
+from app.db.models import PlaylistProfile, SourcePlaylist, SourcePlaylistVersion
+from app.optimization import OptimizedChannel, OptimizationPlan, OptimizationProfile
 from app.performance.aggregation import StreamPerformance
 from app.performance.channels import ChannelPerformance, ChannelStreamRanking
 
@@ -121,4 +122,113 @@ class SourcePlaylistResponse(BaseModel):
             latest_version_id=version.id if version else None,
             latest_version_number=version.version_number if version else None,
             latest_version_entry_count=version.entry_count if version else None,
+        )
+
+
+class PlaylistProfileEntryRequest(BaseModel):
+    channel_id: int
+    position: int = Field(ge=0)
+    enabled: bool = True
+    group_name: str | None = None
+    selected_stream_id: int | None = Field(default=None, gt=0)
+
+
+class PlaylistProfileRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    source_playlist_id: int = Field(gt=0)
+    description: str | None = None
+    entries: list[PlaylistProfileEntryRequest] = Field(default_factory=list)
+
+
+class PlaylistProfileEntryResponse(BaseModel):
+    id: int
+    channel_id: int
+    channel_name: str
+    position: int
+    enabled: bool
+    group_name: str | None
+    selected_stream_id: int | None
+
+
+class PlaylistProfileResponse(BaseModel):
+    id: int
+    source_playlist_id: int | None
+    name: str
+    description: str | None
+    selection_mode: str
+    stream_mode: str
+    entries: list[PlaylistProfileEntryResponse]
+
+    @classmethod
+    def from_model(cls, profile: PlaylistProfile) -> PlaylistProfileResponse:
+        return cls(
+            id=profile.id,
+            source_playlist_id=profile.source_playlist_id,
+            name=profile.name,
+            description=profile.description,
+            selection_mode=profile.selection_mode,
+            stream_mode=profile.stream_mode,
+            entries=[
+                PlaylistProfileEntryResponse(
+                    id=entry.id,
+                    channel_id=entry.channel_id,
+                    channel_name=entry.channel.canonical_name,
+                    position=entry.position,
+                    enabled=entry.enabled,
+                    group_name=entry.group.name if entry.group else None,
+                    selected_stream_id=entry.selected_stream_id,
+                )
+                for entry in profile.entries
+            ],
+        )
+
+
+class OptimizationCandidateResponse(BaseModel):
+    stream_id: int
+    rank: int
+    score: float
+    success_rate: float
+    median_first_frame_ms: float | None
+    p95_first_frame_ms: float | None
+    stability_rate: float
+
+    @classmethod
+    def from_model(cls, item) -> OptimizationCandidateResponse:
+        performance = item.performance
+        return cls(
+            stream_id=performance.stream_id,
+            rank=item.rank,
+            score=item.score,
+            success_rate=performance.success_rate,
+            median_first_frame_ms=performance.median_first_frame_ms,
+            p95_first_frame_ms=performance.p95_first_frame_ms,
+            stability_rate=performance.stability_rate,
+        )
+
+
+class OptimizationChannelResponse(BaseModel):
+    channel_id: int
+    channel_name: str
+    primary_stream_id: int | None
+    candidates: list[OptimizationCandidateResponse]
+
+    @classmethod
+    def from_model(cls, item: OptimizedChannel) -> OptimizationChannelResponse:
+        return cls(
+            channel_id=item.channel_id,
+            channel_name=item.channel_name,
+            primary_stream_id=item.primary_stream_id,
+            candidates=[OptimizationCandidateResponse.from_model(candidate) for candidate in item.candidates],
+        )
+
+
+class OptimizationPlanResponse(BaseModel):
+    profile: OptimizationProfile
+    channels: list[OptimizationChannelResponse]
+
+    @classmethod
+    def from_model(cls, plan: OptimizationPlan) -> OptimizationPlanResponse:
+        return cls(
+            profile=plan.profile,
+            channels=[OptimizationChannelResponse.from_model(item) for item in plan.channels],
         )
