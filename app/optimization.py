@@ -73,20 +73,27 @@ def build_channel_optimization(
     stream_ids: set[int] | None = None,
     profile: OptimizationProfile = OptimizationProfile.FAST,
 ) -> OptimizedChannel:
-    allowed_ids = stream_ids
     performances: list[StreamPerformance] = []
+    policy = POLICIES[profile]
     for channel_stream in channel.streams:
-        if allowed_ids is not None and channel_stream.stream_id not in allowed_ids:
+        if stream_ids is not None and channel_stream.stream_id not in stream_ids:
             continue
         tests = tests_by_stream.get(channel_stream.stream_id, ())
         performance = aggregate_stream_tests(channel_stream.stream_id, tests)
         if performance.successful_tests == 0:
             continue
-        if performance.success_rate < POLICIES[profile].minimum_success_rate:
+        if performance.success_rate < policy.minimum_success_rate:
             continue
         performances.append(performance)
 
-    ranked = rank_channel_streams_for_policy(performances, POLICIES[profile])
+    ranked = rank_channel_streams_for_policy(
+        performances,
+        reliability_weight=policy.reliability_weight,
+        speed_weight=policy.speed_weight,
+        p95_weight=policy.p95_weight,
+        stability_weight=policy.stability_weight,
+        evidence_weight=policy.evidence_weight,
+    )
     primary = ranked[0].performance.stream_id if ranked else None
     return OptimizedChannel(
         channel_id=channel.id,
@@ -108,7 +115,9 @@ def build_optimization_plan(
             build_channel_optimization(
                 channel,
                 tests_by_stream,
-                None if stream_ids_by_channel is None else stream_ids_by_channel.get(channel.id, set()),
+                None
+                if stream_ids_by_channel is None
+                else stream_ids_by_channel.get(channel.id, set()),
                 profile,
             )
             for channel in channels
@@ -117,10 +126,13 @@ def build_optimization_plan(
 
 
 def is_playable_stream(stream: Stream) -> bool:
-    return stream.stream_kind not in {"master_playlist", "unknown"}
+    return stream.stream_kind != "master_playlist"
 
 
-def eligible_stream_ids(channel_streams: Sequence[ChannelStream], streams: dict[int, Stream]) -> set[int]:
+def eligible_stream_ids(
+    channel_streams: Sequence[ChannelStream],
+    streams: dict[int, Stream],
+) -> set[int]:
     return {
         channel_stream.stream_id
         for channel_stream in channel_streams
