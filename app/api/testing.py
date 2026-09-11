@@ -10,11 +10,14 @@ from sqlalchemy.orm import Session
 from app.db.models import TestRun
 from app.db.models.enums import TestRunStatus, TestType
 from app.db.session import SessionLocal, get_db
-from app.testing.deep import DeepTestEngine, DeepTestRunner
-from app.testing.quick import QuickTestEngine, QuickTestRunner
+from app.testing.campaign import TestCampaignRunner
+from app.testing.deep import DeepTestEngine
+from app.testing.quick import QuickTestEngine
 
 router = APIRouter(prefix="/api", tags=["testing"])
 DbSession = Annotated[Session, Depends(get_db)]
+_DEFAULT_CONCURRENCY = 4
+_MAX_CONCURRENCY = 32
 
 
 def _run_tests(
@@ -24,6 +27,7 @@ def _run_tests(
     timeout_seconds: float,
     playback_duration_seconds: float,
     ffmpeg_binary: str,
+    concurrency: int,
 ) -> None:
     with SessionLocal() as session:
         test_run = session.get(TestRun, test_run_id)
@@ -31,20 +35,21 @@ def _run_tests(
             return
         try:
             if test_type == TestType.DEEP.value:
-                runner = DeepTestRunner(
-                    DeepTestEngine(
-                        timeout_seconds=timeout_seconds,
-                        playback_duration_seconds=playback_duration_seconds,
-                        ffmpeg_binary=ffmpeg_binary,
-                    )
+                engine = DeepTestEngine(
+                    timeout_seconds=timeout_seconds,
+                    playback_duration_seconds=playback_duration_seconds,
+                    ffmpeg_binary=ffmpeg_binary,
                 )
             else:
-                runner = QuickTestRunner(
-                    QuickTestEngine(
-                        timeout_seconds=timeout_seconds,
-                        ffmpeg_binary=ffmpeg_binary,
-                    )
+                engine = QuickTestEngine(
+                    timeout_seconds=timeout_seconds,
+                    ffmpeg_binary=ffmpeg_binary,
                 )
+            runner = TestCampaignRunner(
+                engine,
+                test_type=test_type,
+                concurrency=concurrency,
+            )
             runner.run(
                 session,
                 name=test_run.name,
@@ -68,6 +73,7 @@ def _start_background_test(
     timeout_seconds: float,
     playback_duration_seconds: float,
     ffmpeg_binary: str,
+    concurrency: int,
 ) -> None:
     Thread(
         target=_run_tests,
@@ -78,6 +84,7 @@ def _start_background_test(
             timeout_seconds,
             playback_duration_seconds,
             ffmpeg_binary,
+            concurrency,
         ),
         daemon=True,
         name=f"{test_type}-test-{test_run_id}",
@@ -92,6 +99,7 @@ def start_stream_tests(
     timeout_seconds: float = 10.0,
     playback_duration_seconds: float = 10.0,
     ffmpeg_binary: str = "ffmpeg",
+    concurrency: int = _DEFAULT_CONCURRENCY,
 ) -> dict[str, int | str]:
     if test_type not in {TestType.QUICK.value, TestType.DEEP.value}:
         raise HTTPException(status_code=400, detail="test_type must be quick or deep")
@@ -102,27 +110,37 @@ def start_stream_tests(
             status_code=400,
             detail="playback_duration_seconds must be greater than zero",
         )
+    if not 1 <= concurrency <= _MAX_CONCURRENCY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"concurrency must be between 1 and {_MAX_CONCURRENCY}",
+        )
 
     if test_type == TestType.DEEP.value:
-        runner = DeepTestRunner(
-            DeepTestEngine(
-                timeout_seconds=timeout_seconds,
-                playback_duration_seconds=playback_duration_seconds,
-                ffmpeg_binary=ffmpeg_binary,
-            )
+        engine = DeepTestEngine(
+            timeout_seconds=timeout_seconds,
+            playback_duration_seconds=playback_duration_seconds,
+            ffmpeg_binary=ffmpeg_binary,
         )
     else:
-        runner = QuickTestRunner(
-            QuickTestEngine(timeout_seconds=timeout_seconds, ffmpeg_binary=ffmpeg_binary)
-        )
+        engine = QuickTestEngine(timeout_seconds=timeout_seconds, ffmpeg_binary=ffmpeg_binary)
 
-    streams = runner._select_streams(session, source_playlist_id, None)
+    streams = TestCampaignRunner(
+        engine,
+        test_type=test_type,
+        concurrency=concurrency,
+    )._test_streams
+    # Use the existing runner selection logic without executing the campaign in the request.
+    from app.testing.quick import QuickTestRunner
+
+    selected_streams = QuickTestRunner(engine)._select_streams(session, source_playlist_id, None)
+    del streams
     test_run = TestRun(
         source_playlist_id=source_playlist_id,
         name=f"{test_type.title()} Test",
         profile=test_type,
         status=TestRunStatus.PENDING.value,
-        total_streams=len(streams),
+        total_streams=len(selected_streams),
         completed_streams=0,
         successful_streams=0,
         failed_streams=0,
@@ -130,6 +148,7 @@ def start_stream_tests(
             "test_type": test_type,
             "timeout_seconds": timeout_seconds,
             "ffmpeg_binary": ffmpeg_binary,
+            "concurrency": concurrency,
             **(
                 {"playback_duration_seconds": playback_duration_seconds}
                 if test_type == TestType.DEEP.value
@@ -148,6 +167,7 @@ def start_stream_tests(
         timeout_seconds,
         playback_duration_seconds,
         ffmpeg_binary,
+        concurrency,
     )
     return {"test_run_id": test_run.id, "status": test_run.status}
 
