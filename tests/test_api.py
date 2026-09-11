@@ -206,7 +206,7 @@ def test_optimized_m3u_export_uses_primary_stream_and_preserves_metadata() -> No
             source_playlist=playlist,
             version_number=1,
             content_hash="a" * 64,
-            entry_count=1,
+            entry_count=2,
             original_header="#EXTM3U x-tvg-url=\"https://epg.test/guide.xml\"",
             status="completed",
         )
@@ -242,6 +242,23 @@ def test_optimized_m3u_export_uses_primary_stream_and_preserves_metadata() -> No
                     original_directives=["#EXTVLCOPT:http-referrer=https://example.test"],
                     raw_extinf=(
                         '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD'
+                    ),
+                ),
+                PlaylistEntry(
+                    source_playlist_version_id=version.id,
+                    channel_id=channel.id,
+                    stream_id=faster.id,
+                    original_position=1,
+                    original_name="News HD fast",
+                    original_group="News",
+                    original_tvg_id="news.uk",
+                    original_attributes={
+                        "tvg-id": "news.uk",
+                        "group-title": "News",
+                    },
+                    original_directives=[],
+                    raw_extinf=(
+                        '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD fast'
                     ),
                 ),
             ]
