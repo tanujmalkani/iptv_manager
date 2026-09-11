@@ -19,6 +19,12 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def _enum_value(value: object) -> str | None:
+    if value is None:
+        return None
+    return getattr(value, "value", value)
+
+
 class TestCampaignRunner:
     """Run a batch of stream tests concurrently and persist results safely."""
 
@@ -83,10 +89,10 @@ class TestCampaignRunner:
                 attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
                 started_at=_utcnow(),
                 completed_at=_utcnow(),
-                result=result.result.value,
+                result=_enum_value(result.result),
                 available=result.available,
                 error_stage=result.error_stage,
-                error_type=result.error_type.value if result.error_type else None,
+                error_type=_enum_value(result.error_type),
                 error_message=result.error_message,
                 dns_ms=result.dns_ms,
                 connect_ms=result.connect_ms,
@@ -102,7 +108,7 @@ class TestCampaignRunner:
             session.add(stream_test)
 
         successful_streams = sum(
-            1 for result in results.values() if result.result.value == TestResult.SUCCESS.value
+            1 for result in results.values() if _enum_value(result.result) == TestResult.SUCCESS.value
         )
         test_run.configuration_json = {
             **(test_run.configuration_json or {}),
