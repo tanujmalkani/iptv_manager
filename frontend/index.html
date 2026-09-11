@@ -15,15 +15,31 @@
       </div>
       <div class="actions">
         <select id="playlist" aria-label="Source playlist"><option value="">Select playlist…</option></select>
+        <select id="optimization" aria-label="Optimization profile">
+          <option value="fast">Fast</option>
+          <option value="reliable">Reliable</option>
+          <option value="all">All</option>
+        </select>
+        <select id="profile" aria-label="Playlist profile"><option value="">Input playlist</option></select>
+        <button id="save-profile" disabled>Save Profile</button>
         <button id="test" disabled>Quick Test</button>
         <button id="deep-test" disabled>Deep Test</button>
-        <button id="export" disabled>Export optimized M3U</button>
+        <button id="export" disabled>Export M3U</button>
         <button id="refresh">Refresh</button>
       </div>
     </header>
 
     <section id="status" class="status">Loading playlists…</section>
     <section class="playlist-summary"><strong id="playlist-summary">Select a source playlist</strong><span id="channel-count" class="meta">0 channels</span></section>
+
+    <section id="profile-editor" class="panel profile-editor" hidden>
+      <div class="panel-title">
+        <div><h2>Custom playlist</h2><p class="meta">Select channels and use ↑ / ↓ to set their export order.</p></div>
+        <input id="profile-name" type="text" maxlength="255" placeholder="Profile name…">
+      </div>
+      <div id="profile-channels" class="profile-channel-list"></div>
+    </section>
+
     <section id="test-progress" class="progress" hidden>
       <div class="progress-head"><strong id="test-progress-label">Stream test</strong><span id="test-progress-count" class="meta"></span></div>
       <div class="progress-track"><div id="test-progress-bar" class="progress-bar"></div></div>
