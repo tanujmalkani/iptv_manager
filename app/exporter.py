@@ -29,6 +29,25 @@ class ExportResult:
     optimization_profile: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ExportPreview:
+    source_playlist_version_id: int
+    source_playlist_version_number: int
+    source_entry_count: int
+    channel_count: int
+    duplicate_channel_entries: int
+    optimized_count: int
+    manual_selection_count: int
+    automatic_selection_count: int
+    fallback_count: int
+    untested_count: int
+    no_successful_test_count: int
+    invalid_selection_count: int
+    warnings: tuple[str, ...]
+    playlist_profile_id: int | None = None
+    optimization_profile: str | None = None
+
+
 def export_m3u(
     session: Session,
     source_playlist_id: int,
@@ -42,28 +61,11 @@ def export_m3u(
     if version is None:
         return None
 
-    source_entries = session.scalars(
-        select(PlaylistEntry)
-        .options(selectinload(PlaylistEntry.channel), selectinload(PlaylistEntry.stream))
-        .where(PlaylistEntry.source_playlist_version_id == version.id)
-        .order_by(PlaylistEntry.original_position, PlaylistEntry.id)
-    ).all()
-    source_by_channel = {}
-    for entry in source_entries:
-        source_by_channel.setdefault(entry.channel_id, entry)
-
-    profile = None
-    if playlist_profile_id is not None:
-        profile = session.scalar(
-            select(PlaylistProfile)
-            .options(selectinload(PlaylistProfile.entries))
-            .where(
-                PlaylistProfile.id == playlist_profile_id,
-                PlaylistProfile.source_playlist_id == source_playlist_id,
-            )
-        )
-        if profile is None:
-            return None
+    source_entries = _load_source_entries(session, version.id)
+    source_by_channel = _source_by_channel(source_entries)
+    profile = _load_profile(session, source_playlist_id, playlist_profile_id)
+    if playlist_profile_id is not None and profile is None:
+        return None
 
     selected_entries = _select_entries(source_by_channel, profile)
     optimization = None
@@ -72,7 +74,6 @@ def export_m3u(
             session,
             version.id,
             [entry.channel_id for entry in selected_entries],
-            source_by_channel,
             optimization_profile,
         )
 
@@ -118,6 +119,132 @@ def export_m3u(
     )
 
 
+def preview_m3u(
+    session: Session,
+    source_playlist_id: int,
+    *,
+    version_id: int | None = None,
+    optimization_profile: OptimizationProfile | None = None,
+    playlist_profile_id: int | None = None,
+) -> ExportPreview | None:
+    """Summarize the exact channel and stream decisions an M3U export will make."""
+    version = _get_version(session, source_playlist_id, version_id)
+    if version is None:
+        return None
+
+    source_entries = _load_source_entries(session, version.id)
+    source_by_channel = _source_by_channel(source_entries)
+    profile = _load_profile(session, source_playlist_id, playlist_profile_id)
+    if playlist_profile_id is not None and profile is None:
+        return None
+
+    selected_entries = _select_entries(source_by_channel, profile)
+    selected_channel_ids = {entry.channel_id for entry in selected_entries}
+    playlist_stream_entries = session.scalars(
+        select(PlaylistEntry).where(
+            PlaylistEntry.source_playlist_version_id == version.id,
+            PlaylistEntry.channel_id.in_(selected_channel_ids),
+        )
+    ).all() if selected_channel_ids else []
+    all_candidate_stream_ids = {entry.stream_id for entry in playlist_stream_entries}
+
+    optimization = None
+    if optimization_profile is not None and selected_entries:
+        optimization = _build_optimization(
+            session,
+            version.id,
+            [entry.channel_id for entry in selected_entries],
+            optimization_profile,
+        )
+
+    profile_entries = {entry.channel_id: entry for entry in profile.entries} if profile else {}
+    test_stats = _stream_test_stats(session, all_candidate_stream_ids)
+    optimized_count = 0
+    manual_count = 0
+    automatic_count = 0
+    fallback_count = 0
+    untested_count = 0
+    no_successful_test_count = 0
+    invalid_selection_count = 0
+    warnings: list[str] = []
+
+    for entry in selected_entries:
+        profile_entry = profile_entries.get(entry.channel_id)
+        explicit_stream_id = profile_entry.selected_stream_id if profile_entry else None
+        chosen_stream_id = entry.stream_id
+        if explicit_stream_id is not None:
+            manual_count += 1
+            chosen_stream = session.get(Stream, explicit_stream_id)
+            if chosen_stream is None or not _stream_belongs_to_channel(
+                session, version.id, entry.channel_id, explicit_stream_id
+            ):
+                invalid_selection_count += 1
+                warnings.append(
+                    f"{entry.channel.canonical_name}: selected stream #{explicit_stream_id} "
+                    "is not a valid playable option and will use the source stream"
+                )
+            elif chosen_stream.stream_kind == "master_playlist":
+                invalid_selection_count += 1
+                warnings.append(
+                    f"{entry.channel.canonical_name}: selected stream #{explicit_stream_id} "
+                    "is a master playlist and will use the source stream"
+                )
+            else:
+                chosen_stream_id = explicit_stream_id
+        elif optimization is not None:
+            automatic_count += 1
+            channel_plan = optimization.get(entry.channel_id)
+            if channel_plan and channel_plan.primary_stream_id is not None:
+                chosen_stream_id = channel_plan.primary_stream_id
+            else:
+                fallback_count += 1
+                warnings.append(
+                    f"{entry.channel.canonical_name}: no eligible tested stream for "
+                    f"{optimization_profile.value} optimization; source stream retained"
+                )
+        else:
+            fallback_count += 1
+
+        if chosen_stream_id != entry.stream_id:
+            optimized_count += 1
+
+        stats = test_stats.get(chosen_stream_id, (0, 0))
+        if stats[0] == 0:
+            untested_count += 1
+        if stats[1] == 0:
+            no_successful_test_count += 1
+
+    if untested_count:
+        warnings.append(f"{untested_count} exported channel(s) use a stream with no test history")
+    if no_successful_test_count:
+        warnings.append(
+            f"{no_successful_test_count} exported channel(s) use a stream with no successful test"
+        )
+    duplicate_count = len(source_entries) - len(source_by_channel)
+    if duplicate_count:
+        warnings.append(
+            f"{duplicate_count} duplicate source entry(s) collapse to one exported channel entry"
+        )
+
+    return ExportPreview(
+        source_playlist_version_id=version.id,
+        source_playlist_version_number=version.version_number,
+        source_entry_count=len(source_entries),
+        channel_count=len(selected_entries),
+        duplicate_channel_entries=duplicate_count,
+        optimized_count=optimized_count,
+        manual_selection_count=manual_count,
+        automatic_selection_count=automatic_count,
+        fallback_count=fallback_count,
+        untested_count=untested_count,
+        no_successful_test_count=no_successful_test_count,
+        invalid_selection_count=invalid_selection_count,
+        warnings=tuple(dict.fromkeys(warnings)),
+        playlist_profile_id=playlist_profile_id,
+        optimization_profile=optimization_profile.value if optimization_profile else None,
+    )
+
+
 def export_optimized_m3u(
     session: Session,
     source_playlist_id: int,
@@ -129,6 +256,39 @@ def export_optimized_m3u(
         source_playlist_id,
         version_id=version_id,
         optimization_profile=OptimizationProfile.FAST,
+    )
+
+
+def _load_source_entries(session: Session, version_id: int) -> list[PlaylistEntry]:
+    return session.scalars(
+        select(PlaylistEntry)
+        .options(selectinload(PlaylistEntry.channel), selectinload(PlaylistEntry.stream))
+        .where(PlaylistEntry.source_playlist_version_id == version_id)
+        .order_by(PlaylistEntry.original_position, PlaylistEntry.id)
+    ).all()
+
+
+def _source_by_channel(entries: list[PlaylistEntry]) -> dict[int, PlaylistEntry]:
+    source_by_channel: dict[int, PlaylistEntry] = {}
+    for entry in entries:
+        source_by_channel.setdefault(entry.channel_id, entry)
+    return source_by_channel
+
+
+def _load_profile(
+    session: Session,
+    source_playlist_id: int,
+    playlist_profile_id: int | None,
+) -> PlaylistProfile | None:
+    if playlist_profile_id is None:
+        return None
+    return session.scalar(
+        select(PlaylistProfile)
+        .options(selectinload(PlaylistProfile.entries))
+        .where(
+            PlaylistProfile.id == playlist_profile_id,
+            PlaylistProfile.source_playlist_id == source_playlist_id,
+        )
     )
 
 
@@ -149,7 +309,6 @@ def _build_optimization(
     session: Session,
     version_id: int,
     channel_ids: list[int],
-    source_by_channel: dict[int, PlaylistEntry],
     profile: OptimizationProfile,
 ):
     channels = session.scalars(
@@ -184,6 +343,38 @@ def _build_optimization(
         stream_ids_by_channel.setdefault(entry.channel_id, set()).add(entry.stream_id)
     plan = build_optimization_plan(channels, tests_by_stream, stream_ids_by_channel, profile)
     return {item.channel_id: item for item in plan.channels}
+
+
+def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tuple[int, int]]:
+    if not stream_ids:
+        return {}
+    tests = session.scalars(
+        select(StreamTest).where(StreamTest.stream_id.in_(stream_ids))
+    ).all()
+    stats: dict[int, tuple[int, int]] = {}
+    for test in tests:
+        total, successful = stats.get(test.stream_id, (0, 0))
+        stats[test.stream_id] = (total + 1, successful + int(test.success))
+    return stats
+
+
+def _stream_belongs_to_channel(
+    session: Session,
+    version_id: int,
+    channel_id: int,
+    stream_id: int,
+) -> bool:
+    return session.scalar(
+        select(PlaylistEntry.id)
+        .join(Stream, Stream.id == PlaylistEntry.stream_id)
+        .where(
+            PlaylistEntry.source_playlist_version_id == version_id,
+            PlaylistEntry.channel_id == channel_id,
+            PlaylistEntry.stream_id == stream_id,
+            Stream.stream_kind != "master_playlist",
+        )
+        .limit(1)
+    ) is not None
 
 
 def _get_version(
