@@ -42,6 +42,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "DTZ"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:^The anyio\\.abc\\.BlockingPortal alias is deprecated, use anyio\\.from_thread\\.BlockingPortal instead\\.$:DeprecationWarning:starlette\\.testclient",
+]
 
 [tool.mypy]
 python_version = "3.11"
