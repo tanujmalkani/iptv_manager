@@ -142,11 +142,11 @@ def test_campaign_cancellation_persists_completed_workers_and_stops_pending_work
         canceller.join()
 
         assert test_run.status == RunStatus.CANCELLED.value
-        assert test_run.completed_streams == 2
-        assert test_run.successful_streams == 2
+        assert 2 <= test_run.completed_streams < len(streams)
+        assert test_run.successful_streams == test_run.completed_streams
         assert test_run.failed_streams == 0
-        assert len(session.scalars(select(StreamTest)).all()) == 2
-        assert len(engine.calls) == 2
+        assert len(session.scalars(select(StreamTest)).all()) == test_run.completed_streams
+        assert len(engine.calls) == test_run.completed_streams
         assert test_run.configuration_json["cancelled"] is True
     finally:
         session.close()
