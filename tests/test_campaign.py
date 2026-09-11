@@ -6,8 +6,8 @@ import time
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.db.models import Base, ChannelStream, Stream, StreamTest
-from app.db.models.enums import TestRunStatus, TestResult
+from app.db.models import Base, Channel, ChannelStream, Stream, StreamTest
+from app.db.models.enums import TestResult, TestRunStatus
 from app.testing.campaign import TestCampaignRunner
 from app.testing.quick import QuickTestResult
 
@@ -48,8 +48,7 @@ def make_session() -> Session:
 
 
 def add_streams(session: Session, count: int) -> list[Stream]:
-    channel = Stream
-    del channel
+    channel = Channel(canonical_name="News", normalized_name="news")
     streams = [
         Stream(
             url=f"https://example.test/{index}.m3u8",
@@ -58,12 +57,11 @@ def add_streams(session: Session, count: int) -> list[Stream]:
         )
         for index in range(count)
     ]
+    session.add(channel)
     session.add_all(streams)
     session.flush()
     session.add_all(
-        [ChannelStream(channel_id=1, stream_id=stream.id) for stream in streams]
-        if False
-        else []
+        [ChannelStream(channel_id=channel.id, stream_id=stream.id) for stream in streams]
     )
     session.commit()
     return streams
