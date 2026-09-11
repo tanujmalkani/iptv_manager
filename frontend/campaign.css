@@ -11,9 +11,28 @@
   min-width: 56px;
 }
 
+#test-cancel {
+  margin-left: auto;
+}
+
+#test-cancel.danger,
+button.danger {
+  border-color: var(--danger, #b42318);
+  color: var(--danger, #b42318);
+}
+
+#test-cancel:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 @media (max-width: 900px) {
   .inline-setting {
     width: 100%;
     justify-content: space-between;
+  }
+
+  #test-cancel {
+    margin-left: 0;
   }
 }
