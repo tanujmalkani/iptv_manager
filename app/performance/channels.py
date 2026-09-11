@@ -32,11 +32,16 @@ class ChannelPerformance:
 def rank_streams_for_channel(
     channel: Channel,
     tests_by_stream: dict[int, Sequence[StreamTest]],
+    stream_ids: set[int] | None = None,
 ) -> list[ChannelStreamRanking]:
-    """Rank every playable stream currently attached to a channel."""
+    """Rank playable streams currently attached to a channel."""
+    channel_streams = channel.streams
+    if stream_ids is not None:
+        channel_streams = [stream for stream in channel_streams if stream.stream_id in stream_ids]
+
     performances = [
         aggregate_stream_tests(stream.stream_id, tests_by_stream.get(stream.stream_id, ()))
-        for stream in channel.streams
+        for stream in channel_streams
     ]
     ranked = rank_channel_streams(performances)
 
@@ -97,9 +102,25 @@ def get_channels_performance(
         statement.distinct().order_by(Channel.canonical_name, Channel.id)
     ).all()
 
-    stream_ids = {stream.stream_id for channel in channels for stream in channel.streams}
+    if source_playlist_id is None:
+        stream_ids_by_channel = None
+    else:
+        stream_ids_by_channel = _load_playlist_stream_ids(session, source_playlist_id)
+
+    stream_ids = {
+        stream_id
+        for channel in channels
+        for stream_id in _stream_ids_for_channel(channel, stream_ids_by_channel)
+    }
     tests_by_stream = _load_tests(session, stream_ids)
-    return [_build_channel_performance_from_tests(channel, tests_by_stream) for channel in channels]
+    return [
+        _build_channel_performance_from_tests(
+            channel,
+            tests_by_stream,
+            _stream_ids_for_channel(channel, stream_ids_by_channel),
+        )
+        for channel in channels
+    ]
 
 
 def _build_channel_performance(session: Session, channel: Channel) -> ChannelPerformance:
@@ -110,8 +131,9 @@ def _build_channel_performance(session: Session, channel: Channel) -> ChannelPer
 def _build_channel_performance_from_tests(
     channel: Channel,
     tests_by_stream: dict[int, list[StreamTest]],
+    stream_ids: set[int] | None = None,
 ) -> ChannelPerformance:
-    rankings = rank_streams_for_channel(channel, tests_by_stream)
+    rankings = rank_streams_for_channel(channel, tests_by_stream, stream_ids)
     primary_stream_id = next((item.stream_id for item in rankings if item.is_primary), None)
     return ChannelPerformance(
         channel_id=channel.id,
@@ -119,6 +141,35 @@ def _build_channel_performance_from_tests(
         streams=tuple(rankings),
         primary_stream_id=primary_stream_id,
     )
+
+
+def _load_playlist_stream_ids(
+    session: Session,
+    source_playlist_id: int,
+) -> dict[int, set[int]]:
+    rows = session.execute(
+        select(PlaylistEntry.channel_id, PlaylistEntry.stream_id)
+        .join(
+            SourcePlaylistVersion,
+            SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id,
+        )
+        .where(SourcePlaylistVersion.source_playlist_id == source_playlist_id)
+        .distinct()
+    ).all()
+
+    stream_ids_by_channel: dict[int, set[int]] = {}
+    for channel_id, stream_id in rows:
+        stream_ids_by_channel.setdefault(channel_id, set()).add(stream_id)
+    return stream_ids_by_channel
+
+
+def _stream_ids_for_channel(
+    channel: Channel,
+    stream_ids_by_channel: dict[int, set[int]] | None,
+) -> set[int]:
+    if stream_ids_by_channel is None:
+        return {stream.stream_id for stream in channel.streams}
+    return stream_ids_by_channel.get(channel.id, set())
 
 
 def _load_tests(session: Session, stream_ids: set[int]) -> dict[int, list[StreamTest]]:
