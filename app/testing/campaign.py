@@ -83,10 +83,10 @@ class TestCampaignRunner:
                 attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
                 started_at=_utcnow(),
                 completed_at=_utcnow(),
-                result=self._result_value(result.result),
+                result=result.result.value,
                 available=result.available,
                 error_stage=result.error_stage,
-                error_type=self._error_type_value(result.error_type),
+                error_type=result.error_type.value if result.error_type else None,
                 error_message=result.error_message,
                 dns_ms=result.dns_ms,
                 connect_ms=result.connect_ms,
@@ -101,6 +101,9 @@ class TestCampaignRunner:
             )
             session.add(stream_test)
 
+        successful_streams = sum(
+            1 for result in results.values() if result.result.value == TestResult.SUCCESS.value
+        )
         test_run.configuration_json = {
             **(test_run.configuration_json or {}),
             "cancelled": cancelled,
@@ -109,10 +112,8 @@ class TestCampaignRunner:
         test_run.completed_at = _utcnow()
         test_run.total_streams = len(streams)
         test_run.completed_streams = len(results)
-        test_run.successful_streams = sum(
-            1 for result in results.values() if self._result_value(result.result) == TestResult.SUCCESS.value
-        )
-        test_run.failed_streams = test_run.completed_streams - test_run.successful_streams
+        test_run.successful_streams = successful_streams
+        test_run.failed_streams = test_run.completed_streams - successful_streams
         session.commit()
         return test_run
 
@@ -123,6 +124,7 @@ class TestCampaignRunner:
     ) -> tuple[dict[int, QuickTestResult], bool]:
         if not streams:
             return {}, bool(cancel_event and cancel_event.is_set())
+
         executor = ThreadPoolExecutor(
             max_workers=min(self.concurrency, len(streams)),
             thread_name_prefix=f"{self.test_type}-campaign",
@@ -155,7 +157,7 @@ class TestCampaignRunner:
         try:
             if self.test_type == TestType.DEEP.value:
                 return self.engine.test(url, deep=True)
-            return self.engine.test(url, deep=False)
+            return self.engine.test(url)
         except Exception as exc:  # noqa: BLE001
             return QuickTestResult(
                 result=TestResult.FAILED,
@@ -164,16 +166,6 @@ class TestCampaignRunner:
                 error_type=ErrorType.UNKNOWN,
                 error_message=str(exc),
             )
-
-    @staticmethod
-    def _result_value(result: TestResult | str) -> str:
-        return result.value if isinstance(result, TestResult) else result
-
-    @staticmethod
-    def _error_type_value(error_type: ErrorType | str | None) -> str | None:
-        if error_type is None:
-            return None
-        return error_type.value if isinstance(error_type, ErrorType) else error_type
 
     @staticmethod
     def _next_attempt_number(session: Session, stream_id: int, test_type: str) -> int:
