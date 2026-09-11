@@ -7,8 +7,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Base, Channel, ChannelStream, Stream, StreamTest
-from app.db.models.enums import TestResult, TestRunStatus
-from app.testing.campaign import TestCampaignRunner
+from app.db.models.enums import TestResult as ResultType
+from app.db.models.enums import TestRunStatus as RunStatus
+from app.testing.campaign import TestCampaignRunner as CampaignRunner
 from app.testing.quick import QuickTestResult
 
 
@@ -31,7 +32,7 @@ class FakeCampaignEngine:
         try:
             time.sleep(self.delay)
             return QuickTestResult(
-                result=TestResult.SUCCESS,
+                result=ResultType.SUCCESS,
                 available=True,
                 first_frame_ms=100.0,
                 test_duration_ms=self.delay * 1000,
@@ -72,11 +73,11 @@ def test_campaign_runs_streams_concurrently_and_persists_results() -> None:
     try:
         streams = add_streams(session, 6)
         engine = FakeCampaignEngine()
-        runner = TestCampaignRunner(engine, test_type="quick", concurrency=3)
+        runner = CampaignRunner(engine, test_type="quick", concurrency=3)
 
         test_run = runner.run(session, name="Quick Campaign")
 
-        assert test_run.status == TestRunStatus.COMPLETED.value
+        assert test_run.status == RunStatus.COMPLETED.value
         assert test_run.total_streams == 6
         assert test_run.completed_streams == 6
         assert test_run.successful_streams == 6
@@ -100,13 +101,13 @@ def test_campaign_records_worker_exceptions_as_failed_results() -> None:
                     raise RuntimeError("worker exploded")
                 return super().test(url)
 
-        test_run = TestCampaignRunner(
+        test_run = CampaignRunner(
             FailingEngine(),
             test_type="quick",
             concurrency=2,
         ).run(session, name="Failure Campaign")
 
-        assert test_run.status == TestRunStatus.COMPLETED.value
+        assert test_run.status == RunStatus.COMPLETED.value
         assert test_run.successful_streams == 1
         assert test_run.failed_streams == 1
         failed = session.scalar(
@@ -122,7 +123,7 @@ def test_campaign_records_worker_exceptions_as_failed_results() -> None:
 def test_campaign_rejects_invalid_concurrency() -> None:
     engine = FakeCampaignEngine()
     try:
-        TestCampaignRunner(engine, test_type="quick", concurrency=0)
+        CampaignRunner(engine, test_type="quick", concurrency=0)
     except ValueError as exc:
         assert "between 1 and 32" in str(exc)
     else:
