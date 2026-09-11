@@ -14,6 +14,7 @@ from app.db.models import (
     Stream,
 )
 from app.db.models.enums import VersionStatus
+from app.optimization import OptimizationProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,7 @@ class PlaylistProfileInput:
     name: str
     source_playlist_id: int
     description: str | None
+    stream_mode: str
     entries: tuple[ProfileEntryInput, ...]
 
 
@@ -57,12 +59,13 @@ def get_profile(session: Session, profile_id: int) -> PlaylistProfile | None:
 
 def create_profile(session: Session, data: PlaylistProfileInput) -> PlaylistProfile:
     _validate_entries(session, data.source_playlist_id, data.entries)
+    _validate_stream_mode(data.stream_mode)
     profile = PlaylistProfile(
         source_playlist_id=data.source_playlist_id,
         name=data.name.strip(),
         description=data.description.strip() if data.description else None,
         selection_mode="custom",
-        stream_mode="source",
+        stream_mode=data.stream_mode,
     )
     session.add(profile)
     session.flush()
@@ -77,12 +80,20 @@ def update_profile(
     data: PlaylistProfileInput,
 ) -> PlaylistProfile:
     _validate_entries(session, data.source_playlist_id, data.entries)
+    _validate_stream_mode(data.stream_mode)
     profile.source_playlist_id = data.source_playlist_id
     profile.name = data.name.strip()
     profile.description = data.description.strip() if data.description else None
+    profile.stream_mode = data.stream_mode
     _replace_entries(session, profile, data.entries)
     session.flush()
     return profile
+
+
+def _validate_stream_mode(stream_mode: str) -> None:
+    valid = {"source", *(item.value for item in OptimizationProfile)}
+    if stream_mode not in valid:
+        raise ValueError(f"Unsupported stream mode: {stream_mode}")
 
 
 def _validate_entries(
