@@ -4,10 +4,8 @@
   gap: 8px;
   margin-top: 12px;
 }
-
 .test-progress-stats .metric { padding: 10px; }
 .test-progress-stats .metric .value { font-size: 18px; }
-
 .testing-toolbar { box-shadow: 0 1px 1px rgba(16, 24, 40, 0.02); }
 .test-action-row button { min-width: 150px; }
 .test-recommendation { transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
@@ -27,7 +25,6 @@
 
 .overview-metrics .metric,
 .test-progress-stats .metric { background: rgba(255,255,255,.6); }
-
 .channel-browser .panel-title { position: sticky; top: 0; z-index: 2; }
 .channel-browser .panel-title input { margin-top: 2px; }
 .channel { transition: background .12s ease, box-shadow .12s ease; }
@@ -40,6 +37,12 @@
 .status-pill.stale { background: #f2f4f7; color: #475467; }
 .stream.primary { box-shadow: 0 3px 14px rgba(16, 24, 40, 0.05); }
 .stream-stale { border-color: #f79009; }
+
+.channel-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.channel-filters select { width: 100%; min-width: 0; padding: 7px 8px; font-size: 12px; }
+
+.workflow-links button { transition: background .12s ease, border-color .12s ease; }
+.workflow-links button:hover { border-color: #98a2b3; }
 
 @media (max-width: 760px) {
   .test-progress-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -59,3 +62,5 @@
 [data-theme="dark"] .status-pill.degraded { background: #3b2a05; color: #fec84b; }
 [data-theme="dark"] .status-pill.failing { background: #3b1513; color: #fda29b; }
 [data-theme="dark"] .status-pill.stale { background: #2a3340; color: #d0d5dd; }
+[data-theme="dark"] .channel-filters select { background: #171d25; color: #f2f4f7; border-color: #344054; }
+[data-theme="dark"] .workflow-links button:hover { border-color: #667085; }
