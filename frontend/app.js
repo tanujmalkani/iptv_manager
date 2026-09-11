@@ -69,9 +69,12 @@ function renderProfileEditor() {
   const rows = state.profileEntries.filter((item) => channelById.has(item.channel_id));
   $("profile-channels").innerHTML = rows.length ? rows.map((item, index) => {
     const channel = channelById.get(item.channel_id);
+    const selection = item.selected_stream_id == null
+      ? "Auto-select stream"
+      : `Stream #${item.selected_stream_id} selected`;
     return `<div class="profile-row" data-id="${item.channel_id}">
       <input type="checkbox" class="profile-enabled" ${item.enabled ? "checked" : ""} aria-label="Include ${escapeHtml(channel.channel_name)}">
-      <strong>${index + 1}. ${escapeHtml(channel.channel_name)}</strong>
+      <div><strong>${index + 1}. ${escapeHtml(channel.channel_name)}</strong><div class="profile-row-selection">${selection}</div></div>
       <div class="profile-row-actions">
         <button class="profile-up" ${index === 0 ? "disabled" : ""}>↑</button>
         <button class="profile-down" ${index === rows.length - 1 ? "disabled" : ""}>↓</button>
