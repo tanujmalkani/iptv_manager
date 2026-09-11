@@ -41,6 +41,18 @@
       <div id="profile-channels" class="profile-channel-list"></div>
     </section>
 
+    <section id="optimization-preview" class="panel optimization-preview" hidden>
+      <div class="panel-title">
+        <div>
+          <h2>Optimization plan</h2>
+          <p id="optimization-summary" class="meta"></p>
+        </div>
+        <button id="refresh-optimization" type="button">Refresh Plan</button>
+      </div>
+      <div id="optimization-policy" class="optimization-policy"></div>
+      <div id="optimization-channels" class="optimization-channel-list"></div>
+    </section>
+
     <section id="test-progress" class="progress" hidden>
       <div class="progress-head"><strong id="test-progress-label">Stream test</strong><span id="test-progress-count" class="meta"></span></div>
       <div class="progress-track"><div id="test-progress-bar" class="progress-bar"></div></div>
@@ -61,5 +73,6 @@
     </section>
   </main>
   <script src="/frontend/app.js"></script>
+  <script src="/frontend/optimization.js"></script>
 </body>
 </html>
