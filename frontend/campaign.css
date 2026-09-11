@@ -28,6 +28,31 @@ button.danger {
   opacity: 0.65;
 }
 
+.campaign-error {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--danger-border, #fecdca);
+  border-radius: 9px;
+  background: var(--danger-bg, #fef3f2);
+  color: var(--danger, #b42318);
+}
+
+.campaign-error-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.campaign-error-message {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .inline-setting {
     width: 100%;
