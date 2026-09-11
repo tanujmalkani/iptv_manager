@@ -76,18 +76,17 @@ class TestCampaignRunner:
             result = results.get(stream.id)
             if result is None:
                 continue
-            started_at = _utcnow()
             stream_test = StreamTest(
                 stream_id=stream.id,
                 test_run_id=test_run.id,
                 test_type=self.test_type,
                 attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
-                started_at=started_at,
+                started_at=_utcnow(),
                 completed_at=_utcnow(),
-                result=result.result.value,
+                result=self._result_value(result.result),
                 available=result.available,
                 error_stage=result.error_stage,
-                error_type=result.error_type.value if result.error_type else None,
+                error_type=self._error_type_value(result.error_type),
                 error_message=result.error_message,
                 dns_ms=result.dns_ms,
                 connect_ms=result.connect_ms,
@@ -111,7 +110,7 @@ class TestCampaignRunner:
         test_run.total_streams = len(streams)
         test_run.completed_streams = len(results)
         test_run.successful_streams = sum(
-            1 for result in results.values() if result.result == TestResult.SUCCESS
+            1 for result in results.values() if self._result_value(result.result) == TestResult.SUCCESS.value
         )
         test_run.failed_streams = test_run.completed_streams - test_run.successful_streams
         session.commit()
@@ -124,7 +123,6 @@ class TestCampaignRunner:
     ) -> tuple[dict[int, QuickTestResult], bool]:
         if not streams:
             return {}, bool(cancel_event and cancel_event.is_set())
-
         executor = ThreadPoolExecutor(
             max_workers=min(self.concurrency, len(streams)),
             thread_name_prefix=f"{self.test_type}-campaign",
@@ -133,21 +131,24 @@ class TestCampaignRunner:
             executor.submit(self._safe_test, stream.url): stream.id for stream in streams
         }
         results: dict[int, QuickTestResult] = {}
+        cancelled = False
         try:
             for future in as_completed(futures):
-                if cancel_event is not None and cancel_event.is_set():
-                    break
                 if future.cancelled():
+                    cancelled = True
                     continue
                 results[futures[future]] = future.result()
+                if cancel_event is not None and cancel_event.is_set():
+                    cancelled = True
+                    break
         finally:
-            cancelled = bool(cancel_event and cancel_event.is_set())
+            cancelled = cancelled or bool(cancel_event and cancel_event.is_set())
             executor.shutdown(wait=True, cancel_futures=cancelled)
             for future, stream_id in futures.items():
                 if stream_id in results or future.cancelled() or not future.done():
                     continue
                 results[stream_id] = future.result()
-            cancelled = bool(cancel_event and cancel_event.is_set())
+            cancelled = cancelled or bool(cancel_event and cancel_event.is_set())
         return results, cancelled
 
     def _safe_test(self, url: str) -> QuickTestResult:
@@ -163,6 +164,16 @@ class TestCampaignRunner:
                 error_type=ErrorType.UNKNOWN,
                 error_message=str(exc),
             )
+
+    @staticmethod
+    def _result_value(result: TestResult | str) -> str:
+        return result.value if isinstance(result, TestResult) else result
+
+    @staticmethod
+    def _error_type_value(error_type: ErrorType | str | None) -> str | None:
+        if error_type is None:
+            return None
+        return error_type.value if isinstance(error_type, ErrorType) else error_type
 
     @staticmethod
     def _next_attempt_number(session: Session, stream_id: int, test_type: str) -> int:
