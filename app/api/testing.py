@@ -79,13 +79,17 @@ def _run_tests(
                 cancel_event=cancel_event,
             )
         except Exception as exc:
-            test_run.status = TestRunStatus.FAILED.value
-            test_run.completed_at = datetime.now(UTC)
-            test_run.configuration_json = {
-                **test_run.configuration_json,
-                "error": str(exc),
-            }
-            session.commit()
+            session.rollback()
+            test_run = session.get(TestRun, test_run_id)
+            if test_run is not None:
+                test_run.status = TestRunStatus.FAILED.value
+                test_run.completed_at = datetime.now(UTC)
+                test_run.configuration_json = {
+                    **(test_run.configuration_json or {}),
+                    "error_type": type(exc).__name__,
+                    "error": str(exc) or repr(exc),
+                }
+                session.commit()
         finally:
             _remove_cancel_event(test_run_id)
 
@@ -216,6 +220,7 @@ def get_stream_test_run(test_run_id: int, session: DbSession) -> dict[str, objec
     test_run = session.get(TestRun, test_run_id)
     if test_run is None:
         raise HTTPException(status_code=404, detail="Test run not found")
+    configuration = test_run.configuration_json or {}
     return {
         "id": test_run.id,
         "status": test_run.status,
@@ -225,5 +230,7 @@ def get_stream_test_run(test_run_id: int, session: DbSession) -> dict[str, objec
         "failed_streams": test_run.failed_streams,
         "started_at": test_run.started_at,
         "completed_at": test_run.completed_at,
-        "configuration": test_run.configuration_json,
+        "configuration": configuration,
+        "error_type": configuration.get("error_type"),
+        "error": configuration.get("error"),
     }
