@@ -1,0 +1,19 @@
+.inline-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 0.8rem;
+  color: var(--muted, #777);
+}
+
+.inline-setting select {
+  min-width: 56px;
+}
+
+@media (max-width: 900px) {
+  .inline-setting {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
