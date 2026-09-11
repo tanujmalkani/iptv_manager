@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.models import PlaylistProfile, SourcePlaylist, SourcePlaylistVersion
-from app.optimization import OptimizationPlan, OptimizationProfile, OptimizedChannel
+from app.optimization import OptimizationPlan, OptimizationProfile, OptimizedChannel, POLICIES
 from app.performance.aggregation import StreamPerformance
 from app.performance.channels import ChannelPerformance, ChannelStreamRanking
 
@@ -187,7 +187,13 @@ class OptimizationCandidateResponse(BaseModel):
     stream_id: int
     rank: int
     score: float
+    reliability_score: float
+    speed_score: float
+    p95_score: float
+    stability_score: float
+    evidence_score: float
     success_rate: float
+    total_tests: int
     median_first_frame_ms: float | None
     p95_first_frame_ms: float | None
     stability_rate: float
@@ -199,11 +205,26 @@ class OptimizationCandidateResponse(BaseModel):
             stream_id=performance.stream_id,
             rank=item.rank,
             score=item.score,
+            reliability_score=item.reliability_score,
+            speed_score=item.speed_score,
+            p95_score=item.p95_score,
+            stability_score=item.stability_score,
+            evidence_score=item.evidence_score,
             success_rate=performance.success_rate,
+            total_tests=performance.total_tests,
             median_first_frame_ms=performance.median_first_frame_ms,
             p95_first_frame_ms=performance.p95_first_frame_ms,
             stability_rate=performance.stability_rate,
         )
+
+
+class OptimizationPolicyResponse(BaseModel):
+    reliability_weight: float
+    speed_weight: float
+    p95_weight: float
+    stability_weight: float
+    evidence_weight: float
+    minimum_success_rate: float
 
 
 class OptimizationChannelResponse(BaseModel):
@@ -228,11 +249,27 @@ class OptimizationChannelResponse(BaseModel):
 
 class OptimizationPlanResponse(BaseModel):
     profile: OptimizationProfile
+    version_number: int
+    policy: OptimizationPolicyResponse
     channels: list[OptimizationChannelResponse]
 
     @classmethod
-    def from_model(cls, plan: OptimizationPlan) -> OptimizationPlanResponse:
+    def from_model(
+        cls,
+        plan: OptimizationPlan,
+        version_number: int,
+    ) -> OptimizationPlanResponse:
+        policy = POLICIES[plan.profile]
         return cls(
             profile=plan.profile,
+            version_number=version_number,
+            policy=OptimizationPolicyResponse(
+                reliability_weight=policy.reliability_weight,
+                speed_weight=policy.speed_weight,
+                p95_weight=policy.p95_weight,
+                stability_weight=policy.stability_weight,
+                evidence_weight=policy.evidence_weight,
+                minimum_success_rate=policy.minimum_success_rate,
+            ),
             channels=[OptimizationChannelResponse.from_model(item) for item in plan.channels],
         )
