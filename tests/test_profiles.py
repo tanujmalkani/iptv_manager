@@ -84,7 +84,12 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
             "name": "Living Room",
             "source_playlist_id": playlist.id,
             "entries": [
-                {"channel_id": second.id, "position": 0, "enabled": True},
+                {
+                    "channel_id": second.id,
+                    "position": 0,
+                    "enabled": True,
+                    "selected_stream_id": second_stream.id,
+                },
                 {"channel_id": first.id, "position": 1, "enabled": False},
             ],
         }
@@ -93,12 +98,17 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
         body = response.json()
         assert body["name"] == "Living Room"
         actual_entries = [
-            (item["channel_id"], item["position"], item["enabled"])
+            (
+                item["channel_id"],
+                item["position"],
+                item["enabled"],
+                item["selected_stream_id"],
+            )
             for item in body["entries"]
         ]
         assert actual_entries == [
-            (second.id, 0, True),
-            (first.id, 1, False),
+            (second.id, 0, True, second_stream.id),
+            (first.id, 1, False, None),
         ]
 
         profile_id = body["id"]
@@ -107,16 +117,20 @@ def test_playlist_profile_can_save_order_and_selection() -> None:
             json={
                 **payload,
                 "entries": [
-                    {"channel_id": first.id, "position": 0, "enabled": True},
+                    {
+                        "channel_id": first.id,
+                        "position": 0,
+                        "enabled": True,
+                        "selected_stream_id": first_stream.id,
+                    },
                     {"channel_id": second.id, "position": 1, "enabled": True},
                 ],
             },
         )
         assert response.status_code == 200
-        assert [item["channel_id"] for item in response.json()["entries"]] == [
-            first.id,
-            second.id,
-        ]
+        updated_entries = response.json()["entries"]
+        assert [item["channel_id"] for item in updated_entries] == [first.id, second.id]
+        assert updated_entries[0]["selected_stream_id"] == first_stream.id
     finally:
         app.dependency_overrides.clear()
         session.close()
