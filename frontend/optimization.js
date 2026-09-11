@@ -13,6 +13,25 @@ function optimizationReason(candidate, policy, isPrimary) {
   return `Fallback candidate #${candidate.stream_id}, ranked below the primary by the same profile scoring.`;
 }
 
+async function selectOptimizationStream(channelId, streamId) {
+  const entry = state.profileEntries.find((item) => item.channel_id === channelId);
+  if (!entry) {
+    $("status").innerHTML = '<span class="error">Channel is not available in the current playlist profile.</span>';
+    return;
+  }
+  entry.selected_stream_id = streamId;
+  renderProfileEditor();
+
+  if (state.profileId == null) {
+    $("profile-name").focus();
+    $("status").textContent = `Selected stream #${streamId}. Enter a profile name and click Save Profile.`;
+    return;
+  }
+
+  $("status").textContent = `Saving stream #${streamId} for ${entry.channel_id}…`;
+  await saveProfile();
+}
+
 function renderOptimizationPlan(plan) {
   const preview = $("optimization-preview");
   preview.hidden = false;
@@ -54,6 +73,11 @@ function renderOptimizationPlan(plan) {
             Reliability ${candidate.reliability_score.toFixed(1)} · Speed ${candidate.speed_score.toFixed(1)} · P95 ${candidate.p95_score.toFixed(1)} · Stability ${candidate.stability_score.toFixed(1)} · Evidence ${candidate.evidence_score.toFixed(1)}
           </div>
           <div class="optimization-reason">${escapeHtml(optimizationReason(candidate, policy, primary))}</div>
+          <div class="optimization-action">
+            <button type="button" class="select-optimization-stream" onclick="selectOptimizationStream(${channel.channel_id}, ${candidate.stream_id})">
+              ${primary ? "Use as profile selection" : "Use this stream"}
+            </button>
+          </div>
         </div>`;
       }).join("")}</div>` : '<div class="empty">No tested eligible streams meet this profile\'s requirements.</div>'}
     </article>`).join("") : '<div class="empty">No channels are present in this playlist version.</div>';
