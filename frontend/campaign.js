@@ -1,33 +1,9 @@
 (() => {
   const TEST_RECOMMENDATIONS = [
-    {
-      id: "quick-daily",
-      title: "Quick Daily",
-      repeat: "Every 24 hours",
-      testType: "quick",
-      description: "Best for frequently changing playlists or services you rely on throughout the day.",
-    },
-    {
-      id: "quick-three-day",
-      title: "Quick Every 3 Days",
-      repeat: "Every 3 days",
-      testType: "quick",
-      description: "A balanced routine for keeping stream availability and startup performance fresh.",
-    },
-    {
-      id: "deep-weekly",
-      title: "Deep Weekly",
-      repeat: "Every 7 days",
-      testType: "deep",
-      description: "Recommended for validating real playback quality, stability, and sustained throughput.",
-    },
-    {
-      id: "deep-monthly",
-      title: "Deep Monthly",
-      repeat: "Every 30 days",
-      testType: "deep",
-      description: "A lower-frequency full baseline for stable playlists that rarely change.",
-    },
+    { id: "quick-daily", title: "Quick Daily", repeat: "Every 24 hours", testType: "quick", description: "Best for frequently changing playlists or services you rely on throughout the day." },
+    { id: "quick-three-day", title: "Quick Every 3 Days", repeat: "Every 3 days", testType: "quick", description: "A balanced routine for keeping availability and startup performance fresh." },
+    { id: "deep-weekly", title: "Deep Weekly", repeat: "Every 7 days", testType: "deep", description: "Validate real playback quality, stability, and sustained throughput." },
+    { id: "deep-monthly", title: "Deep Monthly", repeat: "Every 30 days", testType: "deep", description: "A lower-frequency full baseline for stable playlists that rarely change." },
   ];
 
   function workerCount() {
@@ -65,10 +41,30 @@
           <div class="test-recommendation-repeat">Repeat ${recommendation.repeat}</div>
           <p class="meta">${recommendation.description}</p>
         </div>
-        <button type="button" class="run-recommendation" data-test-type="${recommendation.testType}" data-recommendation="${recommendation.id}" ${state.polling ? "disabled" : ""}>
-          Run now
-        </button>
+        <button type="button" class="run-recommendation" data-test-type="${recommendation.testType}" ${state.polling ? "disabled" : ""}>Run now</button>
       </article>`).join("");
+  }
+
+  function renderCampaignStats(run) {
+    const progress = $("test-progress");
+    let stats = $("test-progress-stats");
+    if (!stats) {
+      stats = document.createElement("div");
+      stats.id = "test-progress-stats";
+      stats.className = "test-progress-stats";
+      progress.querySelector(".progress-track")?.insertAdjacentElement("afterend", stats);
+    }
+    const total = run.total_streams || 0;
+    const completed = run.completed_streams || 0;
+    const success = run.successful_streams || 0;
+    const failed = run.failed_streams || 0;
+    const completion = total ? Math.round((completed / total) * 100) : 0;
+    stats.innerHTML = [
+      ["Completed", `${completed} / ${total}`],
+      ["Successful", success],
+      ["Failed", failed],
+      ["Progress", `${completion}%`],
+    ].map(([label, value]) => `<div class="metric"><div class="value">${value}</div><div class="label">${label}</div></div>`).join("");
   }
 
   async function startCampaign(testType) {
@@ -84,17 +80,14 @@
     renderTestRecommendations();
 
     try {
-      const params = new URLSearchParams({
-        source_playlist_id: String(state.playlistId),
-        test_type: testType,
-        concurrency: String(workers),
-      });
+      const params = new URLSearchParams({ source_playlist_id: String(state.playlistId), test_type: testType, concurrency: String(workers) });
       const response = await fetch(`/api/stream-tests?${params.toString()}`, { method: "POST" });
       if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
       const run = await response.json();
       state.testRunId = run.test_run_id;
       setCancelControl(true);
       renderTestProgress(run);
+      renderCampaignStats(run);
       await pollCampaign(run.test_run_id);
     } catch (error) {
       state.polling = false;
@@ -131,6 +124,7 @@
       while (true) {
         const run = await getJson(`/api/stream-tests/${runId}`);
         renderCampaignProgress(run);
+        renderCampaignStats(run);
         if (["completed", "failed", "cancelled"].includes(run.status)) {
           state.polling = false;
           setWorkerControlDisabled(false);
@@ -138,6 +132,7 @@
           renderPlaylists();
           renderTestRecommendations();
           await loadChannels();
+          window.renderOverview?.();
           const label = state.testType === "deep" ? "Deep" : "Quick";
           $("status").textContent = `${label} campaign ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
           return;
@@ -158,12 +153,8 @@
     renderTestProgress(run);
     const workers = run.configuration?.concurrency;
     const typeLabel = state.testType === "deep" ? "Deep" : "Quick";
-    if (run.status === "running" && workers) {
-      $("test-progress-label").textContent = `${typeLabel} campaign running · ${workers} workers`;
-    }
-    if (run.configuration?.cancelled || run.status === "cancelled") {
-      $("test-progress-label").textContent = `${typeLabel} campaign cancellation complete`;
-    }
+    if (run.status === "running" && workers) $("test-progress-label").textContent = `${typeLabel} campaign running · ${workers} workers`;
+    if (run.configuration?.cancelled || run.status === "cancelled") $("test-progress-label").textContent = `${typeLabel} campaign cancellation complete`;
   }
 
   document.addEventListener("click", (event) => {
