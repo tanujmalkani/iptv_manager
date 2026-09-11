@@ -8,7 +8,7 @@ h1, h2, h3, p { margin-top: 0; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 button { border: 0; border-radius: 8px; padding: 9px 14px; cursor: pointer; background: #17202a; color: white; }
 button:disabled { cursor: not-allowed; opacity: 0.5; }
-select { padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; background: white; min-width: 220px; }
+select { padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; background: white; min-width: 170px; }
 .status, .playlist-summary, .progress { padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; background: white; border: 1px solid #e4e7ec; }
 .playlist-summary { display: flex; justify-content: space-between; gap: 12px; }
 .progress { margin-bottom: 16px; }
@@ -19,7 +19,13 @@ select { padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; backg
 .panel { background: white; border: 1px solid #e4e7ec; border-radius: 12px; overflow: hidden; }
 .panel-title { padding: 16px; border-bottom: 1px solid #e4e7ec; }
 .panel-title h2 { margin-bottom: 10px; }
-input[type="search"] { width: 100%; padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; }
+input[type="search"], input[type="text"] { width: 100%; padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 8px; }
+.profile-editor { margin-bottom: 16px; }
+.profile-editor .panel-title { display: grid; grid-template-columns: 1fr 280px; gap: 16px; align-items: center; }
+.profile-channel-list { max-height: 340px; overflow: auto; }
+.profile-row { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #f0f2f5; }
+.profile-row-actions { display: flex; gap: 5px; }
+.profile-row-actions button { padding: 4px 9px; }
 .channel-list { max-height: 72vh; overflow: auto; }
 .channel { display: block; width: 100%; text-align: left; background: white; color: #17202a; border-radius: 0; border-bottom: 1px solid #f0f2f5; padding: 13px 16px; }
 .channel:hover, .channel.selected { background: #f8fafc; }
@@ -52,6 +58,7 @@ input[type="search"] { width: 100%; padding: 9px 10px; border: 1px solid #d0d5dd
   .header { align-items: stretch; flex-direction: column; }
   .actions { justify-content: flex-start; }
   .layout { grid-template-columns: 1fr; }
+  .profile-editor .panel-title { grid-template-columns: 1fr; }
   .channel-list { max-height: 45vh; }
   .metrics, .stream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
