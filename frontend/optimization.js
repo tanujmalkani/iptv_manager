@@ -87,4 +87,12 @@ $("optimization").addEventListener("change", () => {
 $("refresh-optimization").addEventListener("click", loadOptimizationPlan);
 $("playlist").addEventListener("change", () => window.setTimeout(loadOptimizationPlan, 0));
 $("refresh").addEventListener("click", () => window.setTimeout(loadOptimizationPlan, 0));
-window.setTimeout(loadOptimizationPlan, 0);
+
+function waitForOptimizationStartup(attempt = 0) {
+  if (state.playlistId != null || attempt >= 20) {
+    loadOptimizationPlan();
+    return;
+  }
+  window.setTimeout(() => waitForOptimizationStartup(attempt + 1), 250);
+}
+waitForOptimizationStartup();
