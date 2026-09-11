@@ -22,6 +22,16 @@
           <option value="all">All</option>
         </select>
         <select id="profile" aria-label="Playlist profile"><option value="">Input playlist</option></select>
+        <label class="inline-setting" title="Number of streams tested at the same time">
+          <span>Workers</span>
+          <select id="test-concurrency" aria-label="Test concurrency">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="4" selected>4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+          </select>
+        </label>
         <button id="save-profile" disabled>Save Profile</button>
         <button id="test" disabled>Quick Test</button>
         <button id="deep-test" disabled>Deep Test</button>
@@ -88,6 +98,7 @@
     </section>
   </main>
   <script src="/frontend/export-preview.js"></script>
+  <script src="/frontend/campaign.js"></script>
   <script src="/frontend/app.js"></script>
   <script src="/frontend/optimization.js"></script>
 </body>
