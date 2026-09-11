@@ -289,7 +289,12 @@ def test_manual_selection_accepts_discovered_hls_stream() -> None:
         session.add(child_stream)
         session.flush()
         session.add(ChannelStream(channel_id=channel.id, stream_id=child_stream.id))
-        session.add(StreamVariant(parent_stream_id=source_stream.id, variant_stream_id=child_stream.id))
+        session.add(
+            StreamVariant(
+                parent_stream_id=source_stream.id,
+                variant_stream_id=child_stream.id,
+            )
+        )
         session.commit()
         profile = make_profile(session, playlist, channel, child_stream.id)
 
