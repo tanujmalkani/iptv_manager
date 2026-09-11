@@ -18,24 +18,32 @@ function exportPreviewFilename(preview) {
 }
 
 function renderExportPreview(preview) {
-  $("export-preview").hidden = false;
-  $("export-preview-summary").textContent = `Source playlist v${preview.source_playlist_version_number} · ${preview.channel_count} channels will be exported`;
-  $("export-preview-metrics").innerHTML = [
-    ["Channels", preview.channel_count],
-    ["Optimized", preview.optimized_count],
-    ["Manual", preview.manual_selection_count],
-    ["Automatic", preview.automatic_selection_count],
-    ["Fallback", preview.fallback_count],
-    ["Untested", preview.untested_count],
-    ["No successful test", preview.no_successful_test_count],
-    ["Duplicate entries", preview.duplicate_channel_entries],
-  ].map(([label, value]) => `<div class="metric"><div class="value">${value}</div><div class="label">${escapeHtml(label)}</div></div>`).join("");
-
+  const panel = $("export-preview");
+  panel.hidden = false;
   const warnings = preview.warnings || [];
+  const invalid = preview.invalid_selection_count > 0;
+  const statusLabel = invalid ? "Export blocked" : warnings.length ? "Review recommended" : "Ready to export";
+  const statusClass = invalid ? "status-danger" : warnings.length ? "status-warning" : "status-success";
+  $("export-preview-summary").innerHTML = `Source playlist v${preview.source_playlist_version_number} · ${preview.channel_count} channels · <span class="export-validation-status ${statusClass}">${statusLabel}</span>`;
+
+  const metrics = [
+    ["Channels", preview.channel_count, "base"],
+    ["Optimized", preview.optimized_count, "good"],
+    ["Manual", preview.manual_selection_count, "good"],
+    ["Automatic", preview.automatic_selection_count, "base"],
+    ["Fallback", preview.fallback_count, preview.fallback_count ? "warn" : "base"],
+    ["Untested", preview.untested_count, preview.untested_count ? "warn" : "base"],
+    ["No successful test", preview.no_successful_test_count, preview.no_successful_test_count ? "warn" : "base"],
+    ["Duplicate entries", preview.duplicate_channel_entries, preview.duplicate_channel_entries ? "warn" : "base"],
+  ];
+  $("export-preview-metrics").innerHTML = metrics.map(([label, value, tone]) =>
+    `<div class="metric export-metric ${tone}"><div class="value">${value}</div><div class="label">${escapeHtml(label)}</div></div>`
+  ).join("");
+
   $("export-preview-warnings").innerHTML = warnings.length
-    ? `<strong>Review before export</strong><ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>`
+    ? `<div class="warning-heading"><strong>${invalid ? "Resolve before exporting" : "Review before exporting"}</strong><span class="meta">${warnings.length} item${warnings.length === 1 ? "" : "s"} to review</span></div><ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>`
     : '<div class="export-ok"><strong>Ready to export.</strong> No validation warnings were found.</div>';
-  $("export-confirm").disabled = preview.invalid_selection_count > 0;
+  $("export-confirm").disabled = invalid;
 }
 
 async function showExportPreview() {
@@ -52,9 +60,7 @@ async function showExportPreview() {
     const query = exportPreviewParams();
     const preview = await getJson(`/api/source-playlists/${state.playlistId}/export-preview${query ? `?${query}` : ""}`);
     renderExportPreview(preview);
-    $("status").textContent = preview.warnings.length
-      ? "Export validation found items to review."
-      : "Export validation passed.";
+    $("status").textContent = preview.warnings.length ? "Export validation found items to review." : "Export validation passed.";
     $("export-preview").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     $("export-preview-summary").innerHTML = `<span class="error">Unable to validate export: ${escapeHtml(error.message)}</span>`;
@@ -91,16 +97,16 @@ async function confirmExport() {
   $("status").textContent = `Exported ${filename}`;
 }
 
-$("export").addEventListener("click", (event) => {
+$("export")?.addEventListener("click", (event) => {
   event.preventDefault();
   event.stopImmediatePropagation();
   showExportPreview();
 }, true);
-$("export-cancel").addEventListener("click", () => {
+$("export-cancel")?.addEventListener("click", () => {
   $("export-preview").hidden = true;
   $("status").textContent = "Export cancelled.";
 });
-$("export-confirm").addEventListener("click", async () => {
+$("export-confirm")?.addEventListener("click", async () => {
   $("export-confirm").disabled = true;
   try {
     await confirmExport();
@@ -110,9 +116,9 @@ $("export-confirm").addEventListener("click", async () => {
   }
 });
 
-$("optimization").addEventListener("change", () => {
+$("optimization")?.addEventListener("change", () => {
   if (!$("export-preview").hidden) showExportPreview();
 });
-$("profile").addEventListener("change", () => {
+$("profile")?.addEventListener("change", () => {
   if (!$("export-preview").hidden) showExportPreview();
 });
