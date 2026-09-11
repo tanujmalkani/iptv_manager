@@ -75,12 +75,14 @@ def test_optimization_preview_returns_profile_scoring_and_primary() -> None:
                     source_playlist_version_id=version.id,
                     channel_id=channel.id,
                     stream_id=fast.id,
+                    original_position=0,
                     raw_extinf="#EXTINF:-1,News",
                 ),
                 PlaylistEntry(
                     source_playlist_version_id=version.id,
                     channel_id=channel.id,
                     stream_id=slow.id,
+                    original_position=1,
                     raw_extinf="#EXTINF:-1,News",
                 ),
             ]
