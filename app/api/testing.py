@@ -75,7 +75,7 @@ def _run_tests(
                 session,
                 name=test_run.name,
                 source_playlist_id=source_playlist_id,
-                existing_test_run=test_run,
+                test_run=test_run,
                 cancel_event=cancel_event,
             )
         except Exception as exc:
