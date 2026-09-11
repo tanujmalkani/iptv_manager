@@ -107,13 +107,9 @@ class TestCampaignRunner:
             )
             session.add(stream_test)
 
-        session.flush()
-        successful_streams = session.scalar(
-            select(func.count(StreamTest.id)).where(
-                StreamTest.test_run_id == test_run.id,
-                StreamTest.result == TestResult.SUCCESS.value,
-            )
-        ) or 0
+        successful_streams = sum(
+            1 for result in results.values() if _enum_value(result.result) == TestResult.SUCCESS.value
+        )
         test_run.configuration_json = {
             **(test_run.configuration_json or {}),
             "cancelled": cancelled,
@@ -165,8 +161,6 @@ class TestCampaignRunner:
 
     def _safe_test(self, url: str) -> QuickTestResult:
         try:
-            if self.test_type == TestType.DEEP.value:
-                return self.engine.test(url, deep=True)
             return self.engine.test(url)
         except Exception as exc:  # noqa: BLE001
             return QuickTestResult(
