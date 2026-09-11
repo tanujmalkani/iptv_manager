@@ -133,7 +133,10 @@ def test_optimization_preview_returns_profile_scoring_and_primary() -> None:
         assert body["channels"][0]["channel_name"] == "News"
         assert body["channels"][0]["primary_stream_id"] == fast.id
         assert body["channels"][0]["candidates"][0]["stream_id"] == fast.id
-        assert body["channels"][0]["candidates"][0]["speed_score"] > body["channels"][0]["candidates"][1]["speed_score"]
+        assert (
+            body["channels"][0]["candidates"][0]["speed_score"]
+            > body["channels"][0]["candidates"][1]["speed_score"]
+        )
     finally:
         app.dependency_overrides.clear()
         session.close()
