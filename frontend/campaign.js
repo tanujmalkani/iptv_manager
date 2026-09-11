@@ -67,6 +67,22 @@
     ].map(([label, value]) => `<div class="metric"><div class="value">${value}</div><div class="label">${label}</div></div>`).join("");
   }
 
+  function renderCampaignError(run) {
+    const error = run.error || run.configuration?.error;
+    const errorType = run.error_type || run.configuration?.error_type;
+    const target = $("test-progress-error");
+    if (!target) return;
+    if (!error) {
+      target.hidden = true;
+      target.innerHTML = "";
+      return;
+    }
+    target.hidden = false;
+    target.innerHTML = `
+      <div class="campaign-error-head"><strong>Campaign error</strong>${errorType ? `<span class="badge muted">${escapeHtml(errorType)}</span>` : ""}</div>
+      <pre class="campaign-error-message">${escapeHtml(error)}</pre>`;
+  }
+
   async function startCampaign(testType) {
     const playlist = selectedPlaylist();
     if (!playlist || playlist.latest_version_id == null || state.polling) return;
@@ -78,16 +94,21 @@
     setWorkerControlDisabled(true);
     setCancelControl(false);
     renderTestRecommendations();
+    $("test-progress-error").hidden = true;
 
     try {
       const params = new URLSearchParams({ source_playlist_id: String(state.playlistId), test_type: testType, concurrency: String(workers) });
       const response = await fetch(`/api/stream-tests?${params.toString()}`, { method: "POST" });
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || `${response.status} ${response.statusText}`);
+      }
       const run = await response.json();
       state.testRunId = run.test_run_id;
       setCancelControl(true);
       renderTestProgress(run);
       renderCampaignStats(run);
+      renderCampaignError(run);
       await pollCampaign(run.test_run_id);
     } catch (error) {
       state.polling = false;
@@ -125,6 +146,7 @@
         const run = await getJson(`/api/stream-tests/${runId}`);
         renderCampaignProgress(run);
         renderCampaignStats(run);
+        renderCampaignError(run);
         if (["completed", "failed", "cancelled"].includes(run.status)) {
           state.polling = false;
           setWorkerControlDisabled(false);
@@ -134,7 +156,13 @@
           await loadChannels();
           window.renderOverview?.();
           const label = state.testType === "deep" ? "Deep" : "Quick";
-          $("status").textContent = `${label} campaign ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
+          if (run.status === "failed") {
+            const detail = run.error || run.configuration?.error || "The campaign ended before stream results could be completed.";
+            const type = run.error_type || run.configuration?.error_type;
+            $("status").innerHTML = `<span class="error">${label} campaign failed: ${escapeHtml(type ? `${type}: ${detail}` : detail)}</span>`;
+          } else {
+            $("status").textContent = `${label} campaign ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
+          }
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -155,6 +183,7 @@
     const typeLabel = state.testType === "deep" ? "Deep" : "Quick";
     if (run.status === "running" && workers) $("test-progress-label").textContent = `${typeLabel} campaign running · ${workers} workers`;
     if (run.configuration?.cancelled || run.status === "cancelled") $("test-progress-label").textContent = `${typeLabel} campaign cancellation complete`;
+    if (run.status === "failed") $("test-progress-label").textContent = `${typeLabel} campaign failed`;
   }
 
   document.addEventListener("click", (event) => {
