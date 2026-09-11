@@ -6,12 +6,34 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
+from app.api.schemas import ExportPreviewResponse
 from app.db.session import get_db
-from app.exporter import export_m3u, export_optimized_m3u
+from app.exporter import export_m3u, export_optimized_m3u, preview_m3u
 from app.optimization import OptimizationProfile
 
 router = APIRouter(prefix="/api", tags=["export"])
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+@router.get("/source-playlists/{source_playlist_id}/export-preview")
+def preview_source_playlist(
+    source_playlist_id: int,
+    session: DbSession,
+    optimization_profile: OptimizationProfile | None = None,
+    playlist_profile_id: int | None = None,
+    version_id: int | None = None,
+) -> ExportPreviewResponse:
+    """Preview the exact export selection and validation warnings."""
+    preview = preview_m3u(
+        session,
+        source_playlist_id,
+        version_id=version_id,
+        optimization_profile=optimization_profile,
+        playlist_profile_id=playlist_profile_id,
+    )
+    if preview is None:
+        raise HTTPException(status_code=404, detail="Playlist or completed version not found")
+    return ExportPreviewResponse.from_model(preview)
 
 
 @router.get("/source-playlists/{source_playlist_id}/export.m3u")
