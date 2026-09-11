@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.models import PlaylistProfile, SourcePlaylist, SourcePlaylistVersion
-from app.optimization import OptimizedChannel, OptimizationPlan, OptimizationProfile
+from app.optimization import OptimizationPlan, OptimizationProfile, OptimizedChannel
 from app.performance.aggregation import StreamPerformance
 from app.performance.channels import ChannelPerformance, ChannelStreamRanking
 
@@ -214,11 +214,15 @@ class OptimizationChannelResponse(BaseModel):
 
     @classmethod
     def from_model(cls, item: OptimizedChannel) -> OptimizationChannelResponse:
+        candidates = [
+            OptimizationCandidateResponse.from_model(candidate)
+            for candidate in item.candidates
+        ]
         return cls(
             channel_id=item.channel_id,
             channel_name=item.channel_name,
             primary_stream_id=item.primary_stream_id,
-            candidates=[OptimizationCandidateResponse.from_model(candidate) for candidate in item.candidates],
+            candidates=candidates,
         )
 
 
