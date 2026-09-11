@@ -65,6 +65,7 @@ def test_start_quick_stream_test_creates_pending_run(monkeypatch) -> None:
         assert run["completed_streams"] == 0
         assert run["configuration"]["test_type"] == "quick"
         assert run["configuration"]["timeout_seconds"] == 5
+        assert run["configuration"]["concurrency"] == 4
         assert "playback_duration_seconds" not in run["configuration"]
     finally:
         app.dependency_overrides.clear()
@@ -85,6 +86,7 @@ def test_start_deep_stream_test_persists_playback_duration(monkeypatch) -> None:
                 "test_type": "deep",
                 "timeout_seconds": 5,
                 "playback_duration_seconds": 2,
+                "concurrency": 8,
             },
         )
 
@@ -94,6 +96,7 @@ def test_start_deep_stream_test_persists_playback_duration(monkeypatch) -> None:
         run = run_response.json()
         assert run["configuration"]["test_type"] == "deep"
         assert run["configuration"]["playback_duration_seconds"] == 2
+        assert run["configuration"]["concurrency"] == 8
     finally:
         app.dependency_overrides.clear()
         session.close()
@@ -103,6 +106,16 @@ def test_start_stream_test_rejects_invalid_duration() -> None:
     client, session = make_client()
     try:
         response = client.post("/api/stream-tests?timeout_seconds=0")
+        assert response.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_start_stream_test_rejects_invalid_concurrency() -> None:
+    client, session = make_client()
+    try:
+        response = client.post("/api/stream-tests?concurrency=33")
         assert response.status_code == 400
     finally:
         app.dependency_overrides.clear()
