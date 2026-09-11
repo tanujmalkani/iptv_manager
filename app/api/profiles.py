@@ -25,6 +25,7 @@ def _input(data: PlaylistProfileRequest) -> PlaylistProfileInput:
         name=data.name,
         source_playlist_id=data.source_playlist_id,
         description=data.description,
+        stream_mode=data.stream_mode,
         entries=tuple(
             ProfileEntryInput(
                 channel_id=entry.channel_id,
