@@ -27,6 +27,12 @@ from app.db.models.enums import ErrorType, TestResult, TestRunStatus, TestType
 _MAX_REDIRECTS = 5
 _MAX_HEADER_BYTES = 64 * 1024
 _SHOWINFO_FRAME_RE = re.compile(r"]\s+n:\s*\d+\s+pts:")
+_FFMPEG_PLAYBACK_OPTIONS = [
+    "-allowed_segment_extensions",
+    "ALL",
+    "-extension_picky",
+    "0",
+]
 
 
 def _utcnow() -> datetime:
@@ -261,7 +267,24 @@ class QuickTestEngine:
         started = time.monotonic()
         try:
             process = subprocess.Popen(
-                [self.ffmpeg_binary, "-hide_banner", "-loglevel", "info", "-i", url, "-map", "0:v:0", "-vf", "showinfo", "-frames:v", "1", "-f", "null", "-"],
+                [
+                    self.ffmpeg_binary,
+                    "-hide_banner",
+                    "-loglevel",
+                    "info",
+                    *_FFMPEG_PLAYBACK_OPTIONS,
+                    "-i",
+                    url,
+                    "-map",
+                    "0:v:0",
+                    "-vf",
+                    "showinfo",
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "null",
+                    "-",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -413,28 +436,27 @@ class QuickTestRunner:
 
     @staticmethod
     def _select_streams(session: Session, source_playlist_id: int | None, stream_ids: list[int] | None) -> list[Stream]:
-        statement = (
-            select(Stream)
-            .join(ChannelStream, ChannelStream.stream_id == Stream.id)
-            .distinct()
-            .order_by(Stream.id)
-        )
-        if stream_ids is not None:
-            if not stream_ids:
-                return []
-            statement = statement.where(Stream.id.in_(stream_ids))
+        statement = select(Stream).where(Stream.stream_kind != "master_playlist")
         if source_playlist_id is not None:
-            statement = (
-                statement.join(PlaylistEntry, PlaylistEntry.channel_id == ChannelStream.channel_id)
-                .join(SourcePlaylistVersion, SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id)
-                .where(SourcePlaylistVersion.source_playlist_id == source_playlist_id)
-            )
-        return session.scalars(statement).all()
+            statement = statement.join(ChannelStream, ChannelStream.stream_id == Stream.id).join(
+                PlaylistEntry, PlaylistEntry.channel_id == ChannelStream.channel_id
+            ).join(
+                SourcePlaylistVersion,
+                SourcePlaylistVersion.id == PlaylistEntry.source_playlist_version_id,
+            ).where(SourcePlaylistVersion.source_playlist_id == source_playlist_id)
+        if stream_ids is not None:
+            statement = statement.where(Stream.id.in_(stream_ids))
+        return session.scalars(statement.distinct().order_by(Stream.id)).all()
 
     @staticmethod
     def _next_attempt_number(session: Session, test_run_id: int, stream_id: int) -> int:
         del test_run_id
-        latest = session.scalar(select(func.max(StreamTest.attempt_number)).where(StreamTest.stream_id == stream_id))
+        latest = session.scalar(
+            select(func.max(StreamTest.attempt_number)).where(
+                StreamTest.stream_id == stream_id,
+                StreamTest.test_type == TestType.QUICK.value,
+            )
+        )
         return (latest or 0) + 1
 
 
@@ -445,13 +467,13 @@ def _network_error(result: _NetworkResult, stage: str, error_type: ErrorType, me
     return result
 
 
-def _elapsed_ms(started: float) -> float:
-    return (time.monotonic() - started) * 1000.0
-
-
 def _sum_ms(first: float | None, second: float | None) -> float | None:
     if first is None:
         return second
     if second is None:
         return first
     return first + second
+
+
+def _elapsed_ms(started: float) -> float:
+    return (time.monotonic() - started) * 1000.0
