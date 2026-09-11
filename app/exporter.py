@@ -183,8 +183,8 @@ def preview_m3u(
             if invalid_reason is not None:
                 invalid_selection_count += 1
                 warnings.append(
-                    f"{entry.channel.canonical_name}: selected stream #{profile_entry.selected_stream_id} "
-                    f"{invalid_reason}; source stream retained"
+                    f"{entry.channel.canonical_name}: selected stream "
+                    f"#{profile_entry.selected_stream_id} {invalid_reason}; source stream retained"
                 )
         elif optimization is not None:
             automatic_count += 1
@@ -270,8 +270,14 @@ def _resolve_stream_choice(
             return chosen_stream_id, True, "is missing from the database"
         if chosen_stream.stream_kind == "master_playlist":
             return entry.stream_id, True, "is a master playlist"
-        if not _stream_belongs_to_channel(session, version_id, entry.channel_id, explicit_stream_id):
-            return chosen_stream_id, True, "is not a valid playable option for this playlist version"
+        if not _stream_belongs_to_channel(
+            session, version_id, entry.channel_id, explicit_stream_id
+        ):
+            return (
+                chosen_stream_id,
+                True,
+                "is not a valid playable option for this playlist version",
+            )
         return explicit_stream_id, False, None
 
     if optimization is not None:
@@ -380,7 +386,12 @@ def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tupl
     return stats
 
 
-def _stream_belongs_to_channel(session: Session, version_id: int, channel_id: int, stream_id: int) -> bool:
+def _stream_belongs_to_channel(
+    session: Session,
+    version_id: int,
+    channel_id: int,
+    stream_id: int,
+) -> bool:
     return session.scalar(
         select(PlaylistEntry.id)
         .join(Stream, Stream.id == PlaylistEntry.stream_id)
