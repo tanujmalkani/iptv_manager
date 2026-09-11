@@ -11,6 +11,7 @@ from app.db.models import (
     PlaylistProfileEntry,
     PlaylistProfileGroup,
     SourcePlaylistVersion,
+    Stream,
 )
 from app.db.models.enums import VersionStatus
 
@@ -119,24 +120,26 @@ def _validate_entries(
     if missing:
         raise ValueError("Profile contains channels that are not in the source playlist")
 
-    stream_ids = {
-        entry.selected_stream_id
+    selected_pairs = {
+        (entry.channel_id, entry.selected_stream_id)
         for entry in entries
         if entry.selected_stream_id is not None
     }
-    if stream_ids:
-        valid_streams = set(
-            session.scalars(
-                select(PlaylistEntry.stream_id)
+    if selected_pairs:
+        valid_pairs = set(
+            session.execute(
+                select(PlaylistEntry.channel_id, PlaylistEntry.stream_id)
+                .join(Stream, Stream.id == PlaylistEntry.stream_id)
                 .where(
                     PlaylistEntry.source_playlist_version_id == latest_version.id,
-                    PlaylistEntry.stream_id.in_(stream_ids),
+                    PlaylistEntry.channel_id.in_(channel_ids),
+                    Stream.stream_kind != "master_playlist",
                 )
                 .distinct()
             ).all()
         )
-        if stream_ids - valid_streams:
-            raise ValueError("Profile contains streams that are not in the source playlist")
+        if selected_pairs - valid_pairs:
+            raise ValueError("Profile contains a stream that is not a playable option for its channel")
 
 
 def _replace_entries(
