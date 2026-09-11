@@ -91,7 +91,11 @@ def get_channel_performance(
         return _build_channel_performance(session, channel)
     stream_ids_by_channel = _load_playlist_stream_ids(session, source_playlist_id)
     stream_ids = _stream_ids_for_channel(channel, stream_ids_by_channel)
-    return _build_channel_performance_from_tests(channel, _load_tests(session, stream_ids), stream_ids)
+    return _build_channel_performance_from_tests(
+        channel,
+        _load_tests(session, stream_ids),
+        stream_ids,
+    )
 
 
 def get_channels_performance(
@@ -197,11 +201,9 @@ def _load_playlist_stream_ids(
         children_by_parent.setdefault(parent_id, set()).add(child_id)
 
     stream_rows = session.execute(
-        select(Stream.id, Stream.stream_kind)
-        .where(Stream.id.in_(
-            root_stream_ids
-            | {child_id for _, child_id in variant_rows}
-        ))
+        select(Stream.id, Stream.stream_kind).where(
+            Stream.id.in_(root_stream_ids | {child_id for _, child_id in variant_rows})
+        )
     ).all()
     kind_by_stream = {stream_id: kind for stream_id, kind in stream_rows}
     playable_kinds = {
