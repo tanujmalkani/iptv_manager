@@ -16,6 +16,7 @@ class RankedStream:
     speed_score: float
     p95_score: float
     evidence_score: float
+    stability_score: float = 0.0
 
 
 def _wilson_lower_bound(successes: int, total: int, z: float = 1.96) -> float:
@@ -39,12 +40,27 @@ def _latency_score(milliseconds: float | None, scale_ms: float) -> float:
 def rank_channel_streams(
     performances: Sequence[StreamPerformance],
 ) -> list[RankedStream]:
-    """Rank playable streams for one channel.
+    """Rank streams with the original reliability-first scoring policy."""
+    return rank_channel_streams_for_policy(
+        performances,
+        reliability_weight=0.60,
+        speed_weight=0.20,
+        p95_weight=0.10,
+        stability_weight=0.00,
+        evidence_weight=0.10,
+    )
 
-    Reliability deliberately dominates the score. Wilson's lower confidence bound
-    prevents a single successful observation from outranking a well-tested stream
-    merely because that one observation was fast.
-    """
+
+def rank_channel_streams_for_policy(
+    performances: Sequence[StreamPerformance],
+    *,
+    reliability_weight: float,
+    speed_weight: float,
+    p95_weight: float,
+    stability_weight: float,
+    evidence_weight: float,
+) -> list[RankedStream]:
+    """Rank streams using configurable weights while keeping common score components."""
     ranked: list[RankedStream] = []
     for performance in performances:
         reliability = 100.0 * _wilson_lower_bound(
@@ -54,11 +70,13 @@ def rank_channel_streams(
         speed = _latency_score(performance.median_first_frame_ms, 1500.0)
         p95 = _latency_score(performance.p95_first_frame_ms, 3000.0)
         evidence = min(performance.total_tests / 10.0, 1.0) * 100.0
+        stability = 100.0 * performance.stability_rate
         score = (
-            reliability * 0.60
-            + speed * 0.20
-            + p95 * 0.10
-            + evidence * 0.10
+            reliability * reliability_weight
+            + speed * speed_weight
+            + p95 * p95_weight
+            + stability * stability_weight
+            + evidence * evidence_weight
         )
         ranked.append(
             RankedStream(
@@ -69,6 +87,7 @@ def rank_channel_streams(
                 speed_score=speed,
                 p95_score=p95,
                 evidence_score=evidence,
+                stability_score=stability,
             )
         )
 
@@ -92,6 +111,7 @@ def rank_channel_streams(
             speed_score=item.speed_score,
             p95_score=item.p95_score,
             evidence_score=item.evidence_score,
+            stability_score=item.stability_score,
         )
         for index, item in enumerate(ranked, start=1)
     ]
