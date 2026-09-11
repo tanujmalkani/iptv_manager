@@ -175,7 +175,7 @@ The GitHub Actions CI workflow currently validates:
 3. the automated test suite
 4. Ruff linting
 
-The current main branch has a green CI baseline.
+The main branch currently has a green CI baseline.
 
 ## Testing locally
 
@@ -233,7 +233,7 @@ Export optimized M3U
 Use the resulting playlist in your IPTV player
 ```
 
-The recommended manual re-test cadences shown in the UI are Quick Daily, Quick Every 3 Days, Deep Weekly, and Deep Monthly. These are currently recommendations for when to run tests; they are not an automated scheduler.
+The UI currently recommends four manual re-test cadences: Quick Daily, Quick Every 3 Days, Deep Weekly, and Deep Monthly. These are currently recommendations for when to run tests; they are not an automated scheduler.
 
 ## Scope and design boundary
 
