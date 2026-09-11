@@ -228,3 +228,100 @@ def test_optimized_m3u_export_uses_primary_stream_and_preserves_metadata() -> No
             normalized_url="https://example.test/original.m3u8",
             stream_kind="media_playlist",
         )
+        faster = Stream(
+            url="https://example.test/fast.m3u8",
+            normalized_url="https://example.test/fast.m3u8",
+            stream_kind="media_playlist",
+        )
+        session.add_all([playlist, version, channel, original, faster])
+        session.flush()
+        session.add_all(
+            [
+                ChannelStream(channel_id=channel.id, stream_id=original.id),
+                ChannelStream(channel_id=channel.id, stream_id=faster.id),
+                PlaylistEntry(
+                    source_playlist_version_id=version.id,
+                    channel_id=channel.id,
+                    stream_id=original.id,
+                    original_position=0,
+                    original_name="News HD",
+                    original_group="News",
+                    original_tvg_id="news.uk",
+                    original_attributes={
+                        "tvg-id": "news.uk",
+                        "group-title": "News",
+                    },
+                    original_directives=["#EXTVLCOPT:http-referrer=https://example.test"],
+                    raw_extinf=(
+                        '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD'
+                    ),
+                ),
+                PlaylistEntry(
+                    source_playlist_version_id=version.id,
+                    channel_id=channel.id,
+                    stream_id=faster.id,
+                    original_position=1,
+                    original_name="News HD fast",
+                    original_group="News",
+                    original_tvg_id="news.uk",
+                    original_attributes={
+                        "tvg-id": "news.uk",
+                        "group-title": "News",
+                    },
+                    original_directives=[],
+                    raw_extinf=(
+                        '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD fast'
+                    ),
+                ),
+            ]
+        )
+        test_run = TestRun(name="Stream Test", profile="quick", status="completed")
+        session.add(test_run)
+        session.flush()
+        session.add(
+            StreamTest(
+                test_run_id=test_run.id,
+                stream_id=faster.id,
+                attempt_number=1,
+                test_type="quick",
+                result="success",
+                started_at=datetime.now(UTC).replace(tzinfo=None),
+                completed_at=datetime.now(UTC).replace(tzinfo=None),
+                available=True,
+                first_frame_ms=100.0,
+            )
+        )
+        session.commit()
+
+        response = client.get(f"/api/source-playlists/{playlist.id}/optimized.m3u")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("audio/x-mpegurl")
+        assert response.headers["content-disposition"].endswith('"')
+        assert response.text == (
+            '#EXTM3U x-tvg-url="https://epg.test/guide.xml"\n'
+            "#EXTVLCOPT:http-referrer=https://example.test\n"
+            '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD\n'
+            "https://example.test/fast.m3u8\n"
+        )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_export_returns_404_when_completed_version_is_missing() -> None:
+    client, session = make_client()
+    try:
+        assert client.get("/api/source-playlists/999/optimized.m3u").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_performance_api_returns_404_for_unknown_resources() -> None:
+    client, session = make_client()
+    try:
+        assert client.get("/api/channels/999").status_code == 404
+        assert client.get("/api/streams/999/performance").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
