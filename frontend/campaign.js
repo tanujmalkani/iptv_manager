@@ -1,4 +1,35 @@
 (() => {
+  const TEST_RECOMMENDATIONS = [
+    {
+      id: "quick-daily",
+      title: "Quick Daily",
+      repeat: "Every 24 hours",
+      testType: "quick",
+      description: "Best for frequently changing playlists or services you rely on throughout the day.",
+    },
+    {
+      id: "quick-three-day",
+      title: "Quick Every 3 Days",
+      repeat: "Every 3 days",
+      testType: "quick",
+      description: "A balanced routine for keeping stream availability and startup performance fresh.",
+    },
+    {
+      id: "deep-weekly",
+      title: "Deep Weekly",
+      repeat: "Every 7 days",
+      testType: "deep",
+      description: "Recommended for validating real playback quality, stability, and sustained throughput.",
+    },
+    {
+      id: "deep-monthly",
+      title: "Deep Monthly",
+      repeat: "Every 30 days",
+      testType: "deep",
+      description: "A lower-frequency full baseline for stable playlists that rarely change.",
+    },
+  ];
+
   function workerCount() {
     const value = Number($("test-concurrency").value || 4);
     return Number.isInteger(value) && value >= 1 && value <= 32 ? value : 4;
@@ -16,6 +47,30 @@
     control.disabled = disabled;
   }
 
+  function renderTestRecommendations() {
+    const panel = $("test-recommendations");
+    const list = $("test-recommendation-list");
+    const playlist = selectedPlaylist();
+    if (!panel || !list) return;
+    panel.hidden = !playlist || playlist.latest_version_id == null;
+    if (panel.hidden) return;
+
+    list.innerHTML = TEST_RECOMMENDATIONS.map((recommendation) => `
+      <article class="test-recommendation">
+        <div>
+          <div class="test-recommendation-head">
+            <strong>${recommendation.title}</strong>
+            <span class="badge ${recommendation.testType === "deep" ? "" : "muted"}">${recommendation.testType === "deep" ? "Deep" : "Quick"}</span>
+          </div>
+          <div class="test-recommendation-repeat">Repeat ${recommendation.repeat}</div>
+          <p class="meta">${recommendation.description}</p>
+        </div>
+        <button type="button" class="run-recommendation" data-test-type="${recommendation.testType}" data-recommendation="${recommendation.id}" ${state.polling ? "disabled" : ""}>
+          Run now
+        </button>
+      </article>`).join("");
+  }
+
   async function startCampaign(testType) {
     const playlist = selectedPlaylist();
     if (!playlist || playlist.latest_version_id == null || state.polling) return;
@@ -26,6 +81,7 @@
     $("status").textContent = `Starting ${label.toLowerCase()} for ${playlist.name} with ${workers} workers…`;
     setWorkerControlDisabled(true);
     setCancelControl(false);
+    renderTestRecommendations();
 
     try {
       const params = new URLSearchParams({
@@ -45,6 +101,7 @@
       setWorkerControlDisabled(false);
       setCancelControl(false);
       renderPlaylists();
+      renderTestRecommendations();
       $("status").innerHTML = `<span class="error">Test campaign failed to start: ${escapeHtml(error.message)}</span>`;
     }
   }
@@ -69,6 +126,7 @@
   async function pollCampaign(runId) {
     state.polling = true;
     renderPlaylists();
+    renderTestRecommendations();
     try {
       while (true) {
         const run = await getJson(`/api/stream-tests/${runId}`);
@@ -78,6 +136,7 @@
           setWorkerControlDisabled(false);
           setCancelControl(false);
           renderPlaylists();
+          renderTestRecommendations();
           await loadChannels();
           const label = state.testType === "deep" ? "Deep" : "Quick";
           $("status").textContent = `${label} campaign ${run.status}: ${run.successful_streams} successful, ${run.failed_streams} failed`;
@@ -90,6 +149,7 @@
       setWorkerControlDisabled(false);
       setCancelControl(false);
       renderPlaylists();
+      renderTestRecommendations();
       $("status").innerHTML = `<span class="error">Test campaign status error: ${escapeHtml(error.message)}</span>`;
     }
   }
@@ -115,10 +175,18 @@
       cancelCampaign();
       return;
     }
+    if (target.classList.contains("run-recommendation")) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      startCampaign(target.dataset.testType);
+      return;
+    }
     if (target.id === "test" || target.id === "deep-test") {
       event.preventDefault();
       event.stopImmediatePropagation();
       startCampaign(target.id === "deep-test" ? "deep" : "quick");
     }
   }, true);
+
+  window.renderTestRecommendations = renderTestRecommendations;
 })();
