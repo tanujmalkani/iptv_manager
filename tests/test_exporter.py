@@ -14,6 +14,7 @@ from app.db.models import (
     SourcePlaylistVersion,
     Stream,
     StreamTest,
+    StreamVariant,
     TestRun,
 )
 from app.exporter import export_m3u, preview_m3u
@@ -85,6 +86,41 @@ def make_profile(
     )
     session.commit()
     return profile
+
+
+def add_successful_test(
+    session: Session,
+    playlist: SourcePlaylist,
+    stream: Stream,
+    *,
+    first_frame_ms: float = 100.0,
+) -> None:
+    test_run = TestRun(
+        source_playlist_id=playlist.id,
+        name="Export test",
+        profile="quick",
+        status="completed",
+    )
+    session.add(test_run)
+    session.flush()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    session.add(
+        StreamTest(
+            test_run_id=test_run.id,
+            stream_id=stream.id,
+            attempt_number=1,
+            test_type="quick",
+            result="success",
+            started_at=now,
+            completed_at=now,
+            available=True,
+            first_frame_ms=first_frame_ms,
+            dns_ms=10.0,
+            connect_ms=20.0,
+            http_response_ms=30.0,
+        )
+    )
+    session.commit()
 
 
 def test_preview_and_export_fall_back_for_stale_manual_selection() -> None:
@@ -163,29 +199,7 @@ def test_preview_with_optimization_handles_existing_test_history() -> None:
     session = make_session()
     try:
         playlist, _, _, source_stream = make_playlist(session)
-        test_run = TestRun(
-            source_playlist_id=playlist.id,
-            name="Export preview test",
-            profile="quick",
-            status="completed",
-        )
-        session.add(test_run)
-        session.flush()
-        now = datetime.now(UTC).replace(tzinfo=None)
-        session.add(
-            StreamTest(
-                test_run_id=test_run.id,
-                stream_id=source_stream.id,
-                attempt_number=1,
-                test_type="quick",
-                result="success",
-                started_at=now,
-                completed_at=now,
-                available=True,
-                first_frame_ms=100.0,
-            )
-        )
-        session.commit()
+        add_successful_test(session, playlist, source_stream)
 
         preview = preview_m3u(
             session,
@@ -205,5 +219,90 @@ def test_preview_with_optimization_handles_existing_test_history() -> None:
         assert preview.untested_count == 0
         assert preview.no_successful_test_count == 0
         assert result.content.count(source_stream.url) == 1
+    finally:
+        session.close()
+
+
+def test_fast_export_optimizes_to_discovered_hls_stream() -> None:
+    session = make_session()
+    try:
+        playlist, version, channel, source_stream = make_playlist(session)
+        source_stream.stream_kind = "master_playlist"
+        child_stream = Stream(
+            url="https://example.test/child.m3u8",
+            normalized_url="https://example.test/child.m3u8",
+            stream_kind="media_stream",
+        )
+        session.add(child_stream)
+        session.flush()
+        session.add(ChannelStream(channel_id=channel.id, stream_id=child_stream.id))
+        session.add(
+            StreamVariant(
+                parent_stream_id=source_stream.id,
+                variant_stream_id=child_stream.id,
+                bandwidth=2_000_000,
+                resolution_width=1920,
+                resolution_height=1080,
+            )
+        )
+        session.commit()
+        add_successful_test(session, playlist, child_stream, first_frame_ms=50.0)
+
+        preview = preview_m3u(
+            session,
+            playlist.id,
+            version_id=version.id,
+            optimization_profile=OptimizationProfile.FAST,
+        )
+        result = export_m3u(
+            session,
+            playlist.id,
+            version_id=version.id,
+            optimization_profile=OptimizationProfile.FAST,
+        )
+
+        assert preview is not None
+        assert result is not None
+        assert preview.optimized_count == 1
+        assert preview.automatic_selection_count == 1
+        assert preview.fallback_count == 0
+        assert preview.untested_count == 0
+        assert preview.no_successful_test_count == 0
+        assert child_stream.url in result.content
+        assert source_stream.url not in result.content
+        assert result.optimized_count == 1
+        assert result.fallback_count == 0
+    finally:
+        session.close()
+
+
+def test_manual_selection_accepts_discovered_hls_stream() -> None:
+    session = make_session()
+    try:
+        playlist, _, channel, source_stream = make_playlist(session)
+        source_stream.stream_kind = "master_playlist"
+        child_stream = Stream(
+            url="https://example.test/manual-child.m3u8",
+            normalized_url="https://example.test/manual-child.m3u8",
+            stream_kind="media_stream",
+        )
+        session.add(child_stream)
+        session.flush()
+        session.add(ChannelStream(channel_id=channel.id, stream_id=child_stream.id))
+        session.add(StreamVariant(parent_stream_id=source_stream.id, variant_stream_id=child_stream.id))
+        session.commit()
+        profile = make_profile(session, playlist, channel, child_stream.id)
+
+        preview = preview_m3u(session, playlist.id, playlist_profile_id=profile.id)
+        result = export_m3u(session, playlist.id, playlist_profile_id=profile.id)
+
+        assert preview is not None
+        assert result is not None
+        assert preview.invalid_selection_count == 0
+        assert preview.manual_selection_count == 1
+        assert preview.optimized_count == 1
+        assert result.fallback_count == 0
+        assert child_stream.url in result.content
+        assert source_stream.url not in result.content
     finally:
         session.close()
