@@ -109,9 +109,7 @@ class TestCampaignRunner:
             )
             session.add(stream_test)
 
-        successful_streams = sum(
-            1 for result in results.values() if _enum_value(result.result) == TestResult.SUCCESS.value
-        )
+        successful_streams = sum(1 for result in results.values() if result.available)
         test_run.configuration_json = {
             **(test_run.configuration_json or {}),
             "cancelled": cancelled,
