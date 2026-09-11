@@ -58,18 +58,13 @@ function renderProfiles() {
 
 function renderProfileEditor() {
   const editor = $("profile-editor");
-  if (state.profileId == null && !$("profile-name").value) {
-    editor.hidden = false;
-    $("profile-name").value = "";
-  } else if (state.profileId != null) {
-    editor.hidden = false;
+  editor.hidden = state.playlistId == null;
+  if (editor.hidden) return;
+  if (state.profileId != null) {
     const profile = selectedProfile();
     $("profile-name").value = profile?.name || "";
-  } else {
-    editor.hidden = false;
   }
 
-  const order = new Map(state.profileEntries.map((item, index) => [item.channel_id, index]));
   const channelById = new Map(state.channels.map((item) => [item.channel_id, item]));
   const rows = state.profileEntries.filter((item) => channelById.has(item.channel_id));
   $("profile-channels").innerHTML = rows.length ? rows.map((item, index) => {
@@ -93,7 +88,6 @@ function renderProfileEditor() {
     row.querySelector(".profile-up").addEventListener("click", () => moveProfileEntry(id, -1));
     row.querySelector(".profile-down").addEventListener("click", () => moveProfileEntry(id, 1));
   });
-  void order;
 }
 
 function moveProfileEntry(channelId, delta) {
@@ -308,13 +302,16 @@ async function exportPlaylist() {
   const playlist = selectedPlaylist(); if (!playlist || playlist.latest_version_id == null) return;
   $("status").textContent = "Preparing playlist…";
   try {
-    const params = new URLSearchParams({ optimization_profile: state.optimization });
+    const params = new URLSearchParams();
+    if (state.optimization) params.set("optimization_profile", state.optimization);
     if (state.profileId != null) params.set("playlist_profile_id", state.profileId);
-    const response = await fetch(`/api/source-playlists/${state.playlistId}/export.m3u?${params}`);
+    const query = params.toString();
+    const response = await fetch(`/api/source-playlists/${state.playlistId}/export.m3u${query ? `?${query}` : ""}`);
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     const blob = await response.blob(); const disposition = response.headers.get("content-disposition") || "";
     const match = disposition.match(/filename="([^"]+)"/);
-    const filename = match ? match[1] : `iptv-manager-${state.optimization}-v${playlist.latest_version_number}.m3u`;
+    const suffix = state.optimization || "original";
+    const filename = match ? match[1] : `iptv-manager-${suffix}-v${playlist.latest_version_number}.m3u`;
     const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename;
     document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); $("status").textContent = `Exported ${filename}`;
   } catch (error) { $("status").innerHTML = `<span class="error">Export failed: ${escapeHtml(error.message)}</span>`; }
