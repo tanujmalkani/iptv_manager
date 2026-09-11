@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
+from threading import Event
 from typing import Callable
 
 from sqlalchemy import func, select
@@ -46,6 +47,7 @@ class TestCampaignRunner:
         stream_ids: list[int] | None = None,
         on_result: Callable[[StreamTest, int, int], None] | None = None,
         existing_test_run: TestRun | None = None,
+        cancel_event: Event | None = None,
     ) -> TestRun:
         selector = QuickTestRunner(self.engine)
         streams = selector._select_streams(session, source_playlist_id, stream_ids)
@@ -77,8 +79,8 @@ class TestCampaignRunner:
             session.commit()
 
         try:
-            results = self._test_streams(streams)
-            for index, stream in enumerate(streams, start=1):
+            results, cancelled = self._test_streams(streams, cancel_event=cancel_event)
+            for index, stream in enumerate((s for s in streams if s.id in results), start=1):
                 result = results[stream.id]
                 stream_test = self._persist_result(session, test_run, stream, result)
                 test_run.completed_streams += 1
@@ -92,8 +94,14 @@ class TestCampaignRunner:
                 if on_result is not None:
                     on_result(stream_test, index, len(streams))
 
-            test_run.status = TestRunStatus.COMPLETED.value
+            test_run.status = (
+                TestRunStatus.CANCELLED.value if cancelled else TestRunStatus.COMPLETED.value
+            )
             test_run.completed_at = _utcnow()
+            test_run.configuration_json = {
+                **test_run.configuration_json,
+                "cancelled": cancelled,
+            }
             session.commit()
             session.refresh(test_run)
             return test_run
@@ -103,18 +111,44 @@ class TestCampaignRunner:
             session.commit()
             raise
 
-    def _test_streams(self, streams: list[Stream]) -> dict[int, QuickTestResult]:
+    def _test_streams(
+        self,
+        streams: list[Stream],
+        *,
+        cancel_event: Event | None = None,
+    ) -> tuple[dict[int, QuickTestResult], bool]:
         if not streams:
-            return {}
-        with ThreadPoolExecutor(
+            return {}, bool(cancel_event and cancel_event.is_set())
+
+        executor = ThreadPoolExecutor(
             max_workers=min(self.concurrency, len(streams)),
             thread_name_prefix=f"{self.test_type}-campaign",
-        ) as executor:
-            futures = {executor.submit(self._safe_test, stream.url): stream.id for stream in streams}
-            results: dict[int, QuickTestResult] = {}
+        )
+        futures = {
+            executor.submit(self._safe_test, stream.url): stream.id for stream in streams
+        }
+        results: dict[int, QuickTestResult] = {}
+        cancelled = False
+        try:
             for future in as_completed(futures):
+                if future.cancelled():
+                    cancelled = True
+                    continue
                 results[futures[future]] = future.result()
-        return results
+                if cancel_event is not None and cancel_event.is_set():
+                    cancelled = True
+                    executor.shutdown(wait=True, cancel_futures=True)
+                    break
+        finally:
+            if not cancelled:
+                cancelled = bool(cancel_event and cancel_event.is_set())
+                executor.shutdown(wait=True, cancel_futures=cancelled)
+            else:
+                for future in futures:
+                    if future.cancelled():
+                        cancelled = True
+                executor.shutdown(wait=True, cancel_futures=True)
+        return results, cancelled
 
     def _safe_test(self, url: str) -> QuickTestResult:
         started = _utcnow()
