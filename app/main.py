@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.export import router as export_router
+from app.api.optimization import router as optimization_router
 from app.api.performance import router as performance_router
 from app.api.playlists import router as playlists_router
 from app.api.profiles import router as profiles_router
@@ -14,6 +15,7 @@ from app.config import get_settings
 settings = get_settings()
 app = FastAPI(title=settings.app_name)
 app.include_router(performance_router)
+app.include_router(optimization_router)
 app.include_router(export_router)
 app.include_router(playlists_router)
 app.include_router(profiles_router)
