@@ -139,7 +139,9 @@ def _validate_entries(
             ).all()
         )
         if selected_pairs - valid_pairs:
-            raise ValueError("Profile contains a stream that is not a playable option for its channel")
+            raise ValueError(
+                "Profile contains a stream that is not a playable option for its channel"
+            )
 
 
 def _replace_entries(
