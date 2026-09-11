@@ -119,7 +119,11 @@ def _validate_entries(
     if missing:
         raise ValueError("Profile contains channels that are not in the source playlist")
 
-    stream_ids = {entry.selected_stream_id for entry in entries if entry.selected_stream_id is not None}
+    stream_ids = {
+        entry.selected_stream_id
+        for entry in entries
+        if entry.selected_stream_id is not None
+    }
     if stream_ids:
         valid_streams = set(
             session.scalars(
