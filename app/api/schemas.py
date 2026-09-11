@@ -5,7 +5,12 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.models import PlaylistProfile, SourcePlaylist, SourcePlaylistVersion
-from app.optimization import OptimizationPlan, OptimizationProfile, OptimizedChannel, POLICIES
+from app.optimization import (
+    POLICIES,
+    OptimizationPlan,
+    OptimizationProfile,
+    OptimizedChannel,
+)
 from app.performance.aggregation import StreamPerformance
 from app.performance.channels import ChannelPerformance, ChannelStreamRanking
 
