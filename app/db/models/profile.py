@@ -37,10 +37,14 @@ class PlaylistProfile(Base):
 
     source_playlist: Mapped[SourcePlaylist | None] = relationship()
     groups: Mapped[list[PlaylistProfileGroup]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan", order_by="PlaylistProfileGroup.id"
+        back_populates="profile",
+        cascade="all, delete-orphan",
+        order_by="PlaylistProfileGroup.id",
     )
     entries: Mapped[list[PlaylistProfileEntry]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan", order_by="PlaylistProfileEntry.position"
+        back_populates="profile",
+        cascade="all, delete-orphan",
+        order_by="PlaylistProfileEntry.position",
     )
 
 
