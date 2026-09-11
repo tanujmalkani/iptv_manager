@@ -1,3 +1,5 @@
+@import url("/frontend/ui.css");
+
 .inline-setting {
   display: inline-flex;
   align-items: center;
