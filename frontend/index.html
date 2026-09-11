@@ -9,112 +9,252 @@
 </head>
 <body>
   <main class="shell">
-    <header class="header">
-      <div>
-        <h1>IPTV Manager</h1>
-        <p>Fast-zap stream performance dashboard</p>
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark">IP</div>
+        <div>
+          <h1>IPTV Manager</h1>
+          <p>Player-independent stream performance and playlist optimization</p>
+        </div>
       </div>
-      <div class="actions">
-        <select id="playlist" aria-label="Source playlist"><option value="">Select playlist…</option></select>
-        <select id="optimization" aria-label="Export optimization">
-          <option value="">Original</option>
-          <option value="fast" selected>Fast</option>
-          <option value="reliable">Reliable</option>
-          <option value="all">All</option>
-        </select>
-        <select id="profile" aria-label="Playlist profile"><option value="">Input playlist</option></select>
-        <label class="inline-setting" title="Number of streams tested at the same time">
-          <span>Workers</span>
-          <select id="test-concurrency" aria-label="Test concurrency">
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="4" selected>4</option>
-            <option value="8">8</option>
-            <option value="16">16</option>
-          </select>
+      <div class="header-controls">
+        <label class="header-field">
+          <span class="sr-only">Source playlist</span>
+          <select id="playlist" aria-label="Source playlist"><option value="">Select playlist…</option></select>
         </label>
-        <button id="save-profile" disabled>Save Profile</button>
-        <button id="test" disabled>Quick Test</button>
-        <button id="deep-test" disabled>Deep Test</button>
-        <button id="export" disabled>Export M3U</button>
-        <button id="refresh">Refresh</button>
+        <button id="refresh" class="icon-button" type="button" title="Refresh data" aria-label="Refresh data">↻</button>
+        <button id="theme-toggle" class="icon-button" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">☾</button>
       </div>
     </header>
 
-    <section id="status" class="status">Loading playlists…</section>
-    <section class="playlist-summary"><strong id="playlist-summary">Select a source playlist</strong><span id="channel-count" class="meta">0 channels</span></section>
+    <nav class="main-nav" aria-label="Primary navigation">
+      <button class="nav-tab active" type="button" data-page="overview">Overview</button>
+      <button class="nav-tab" type="button" data-page="import">Import</button>
+      <button class="nav-tab" type="button" data-page="channels">Channels</button>
+      <button class="nav-tab" type="button" data-page="testing">Testing</button>
+      <button class="nav-tab" type="button" data-page="export">Export</button>
+    </nav>
 
-    <section id="test-recommendations" class="panel test-recommendations" hidden>
-      <div class="panel-title">
-        <div>
-          <h2>Recommended re-tests</h2>
-          <p class="meta">Choose a cadence based on how closely you want to track stream health. Tests are always started manually.</p>
-        </div>
-      </div>
-      <div id="test-recommendation-list" class="test-recommendation-list"></div>
+    <section id="status" class="status" role="status">Loading playlists…</section>
+    <section class="playlist-summary">
+      <strong id="playlist-summary">Select a source playlist</strong>
+      <span id="channel-count" class="meta">0 channels</span>
     </section>
 
-    <section id="profile-editor" class="panel profile-editor" hidden>
-      <div class="panel-title">
-        <div><h2>Custom playlist</h2><p class="meta">Select channels and use ↑ / ↓ to set their export order.</p></div>
-        <input id="profile-name" type="text" maxlength="255" placeholder="Profile name…">
-      </div>
-      <div id="profile-channels" class="profile-channel-list"></div>
-    </section>
-
-    <section id="optimization-preview" class="panel optimization-preview" hidden>
-      <div class="panel-title">
-        <div>
-          <h2>Optimization plan</h2>
-          <p id="optimization-summary" class="meta"></p>
+    <div class="pages">
+      <section id="page-overview" class="page active" data-page="overview">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h2>Playlist health at a glance</h2>
+            <p class="meta">See stream coverage, testing health, and current optimization readiness.</p>
+          </div>
         </div>
-        <button id="refresh-optimization" type="button">Refresh Plan</button>
-      </div>
-      <div id="optimization-policy" class="optimization-policy"></div>
-      <div id="optimization-channels" class="optimization-channel-list"></div>
-    </section>
-
-    <section id="export-preview" class="panel export-preview" hidden>
-      <div class="panel-title">
-        <div>
-          <h2>Export validation</h2>
-          <p id="export-preview-summary" class="meta"></p>
-        </div>
-        <div class="export-preview-actions">
-          <button id="export-cancel" type="button">Cancel</button>
-          <button id="export-confirm" type="button">Export M3U</button>
-        </div>
-      </div>
-      <div id="export-preview-metrics" class="export-preview-metrics"></div>
-      <div id="export-preview-warnings" class="export-preview-warnings"></div>
-    </section>
-
-    <section id="test-progress" class="progress" hidden>
-      <div class="progress-head">
-        <div><strong id="test-progress-label">Stream test</strong><span id="test-progress-count" class="meta"></span></div>
-        <button id="test-cancel" class="danger" type="button" hidden>Cancel Test</button>
-      </div>
-      <div class="progress-track"><div id="test-progress-bar" class="progress-bar"></div></div>
-    </section>
-
-    <section class="layout">
-      <aside class="panel">
-        <div class="panel-title">
-          <h2>Channels</h2>
-          <input id="filter" type="search" placeholder="Filter channels…" autocomplete="off">
-        </div>
-        <div id="channels" class="channel-list"></div>
-      </aside>
-      <section class="panel detail">
-        <div id="empty" class="empty">Select a channel to inspect its stream rankings.</div>
-        <div id="channel-detail" hidden></div>
+        <div id="overview-content"></div>
       </section>
-    </section>
+
+      <section id="page-import" class="page" data-page="import" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Import</p>
+            <h2>Bring in a playlist</h2>
+            <p class="meta">Paste an M3U playlist to create a new immutable source version.</p>
+          </div>
+        </div>
+        <section class="panel import-panel">
+          <form id="import-form" class="import-form">
+            <div class="form-grid">
+              <label>
+                <span>Playlist name</span>
+                <input id="import-name" type="text" maxlength="255" required placeholder="My IPTV Playlist">
+              </label>
+              <label>
+                <span>Source location <em>(optional)</em></span>
+                <input id="import-source-location" type="text" maxlength="2000" placeholder="https://example.com/playlist.m3u">
+              </label>
+            </div>
+            <label>
+              <span>M3U content</span>
+              <textarea id="import-content" rows="16" required spellcheck="false" placeholder="#EXTM3U
+#EXTINF:-1 tvg-name=&quot;Example TV&quot;,Example TV
+https://example.com/stream.m3u8"></textarea>
+            </label>
+            <div class="form-actions">
+              <span class="meta">The server will parse, normalize, and discover streams during import.</span>
+              <button id="import-submit" type="submit">Import playlist</button>
+            </div>
+          </form>
+          <div id="import-result" class="import-result" hidden></div>
+        </section>
+        <section class="panel helper-panel">
+          <div class="panel-title">
+            <div>
+              <h3>Import behavior</h3>
+              <p class="meta">Each changed import creates a new version; identical content is detected and does not create a duplicate version.</p>
+            </div>
+          </div>
+          <div class="helper-grid">
+            <div><strong>Normalize</strong><span class="meta">Channel names and stream URLs are normalized for matching.</span></div>
+            <div><strong>Discover</strong><span class="meta">HLS masters are inspected for playable streams and variants.</span></div>
+            <div><strong>Preserve</strong><span class="meta">Original M3U metadata and directives remain available for export.</span></div>
+          </div>
+        </section>
+      </section>
+
+      <section id="page-channels" class="page" data-page="channels" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Channels</p>
+            <h2>Inspect stream performance</h2>
+            <p class="meta">Compare playable streams and the evidence behind their rankings.</p>
+          </div>
+        </div>
+        <section class="layout">
+          <aside class="panel channel-browser">
+            <div class="panel-title">
+              <div>
+                <h3>Channels</h3>
+                <p id="channel-browser-summary" class="meta">Search your current playlist.</p>
+              </div>
+              <input id="filter" type="search" placeholder="Filter channels…" autocomplete="off">
+            </div>
+            <div id="channels" class="channel-list"></div>
+          </aside>
+          <section class="panel detail">
+            <div id="empty" class="empty">Select a channel to inspect its stream rankings.</div>
+            <div id="channel-detail" hidden></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="page-testing" class="page" data-page="testing" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Testing</p>
+            <h2>Test stream health</h2>
+            <p class="meta">Run Quick checks frequently and Deep checks periodically.</p>
+          </div>
+        </div>
+        <section class="testing-toolbar panel">
+          <div class="test-control-group">
+            <div>
+              <h3>New test campaign</h3>
+              <p class="meta">Tests use the latest completed version of the selected playlist.</p>
+            </div>
+            <label class="inline-setting">
+              <span>Workers</span>
+              <select id="test-concurrency" aria-label="Test concurrency">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4" selected>4</option>
+                <option value="8">8</option>
+                <option value="16">16</option>
+              </select>
+            </label>
+          </div>
+          <div class="test-action-row">
+            <button id="test" type="button">Run Quick Test</button>
+            <button id="deep-test" type="button">Run Deep Test</button>
+          </div>
+        </section>
+
+        <section id="test-recommendations" class="panel test-recommendations" hidden>
+          <div class="panel-title">
+            <div>
+              <h3>Recommended re-tests</h3>
+              <p class="meta">Manual cadences based on the role of each test type. No automated scheduling is created.</p>
+            </div>
+          </div>
+          <div id="test-recommendation-list" class="test-recommendation-list"></div>
+        </section>
+
+        <section id="test-progress" class="progress panel" hidden>
+          <div class="progress-head">
+            <div><strong id="test-progress-label">Stream test</strong><span id="test-progress-count" class="meta"></span></div>
+            <button id="test-cancel" class="danger" type="button" hidden>Cancel Test</button>
+          </div>
+          <div class="progress-track"><div id="test-progress-bar" class="progress-bar"></div></div>
+        </section>
+      </section>
+
+      <section id="page-export" class="page" data-page="export" hidden>
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">Export</p>
+            <h2>Build and validate your output playlist</h2>
+            <p class="meta">Choose an optimization policy, tune a profile, review validation, then export M3U.</p>
+          </div>
+        </div>
+
+        <section class="panel export-controls">
+          <div class="export-control-grid">
+            <label>
+              <span>Optimization</span>
+              <select id="optimization" aria-label="Export optimization">
+                <option value="">Original</option>
+                <option value="fast" selected>Fast</option>
+                <option value="reliable">Reliable</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+            <label>
+              <span>Playlist profile</span>
+              <select id="profile" aria-label="Playlist profile"><option value="">Input playlist</option></select>
+            </label>
+            <label>
+              <span>Profile name</span>
+              <input id="profile-name" type="text" maxlength="255" placeholder="Profile name…">
+            </label>
+            <div class="export-control-actions">
+              <button id="save-profile" type="button">Save Profile</button>
+              <button id="export" type="button">Preview Export</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="profile-editor" class="panel profile-editor" hidden>
+          <div class="panel-title">
+            <div><h3>Custom playlist order</h3><p class="meta">Enable channels and use ↑ / ↓ to set their export order. Stream selections can be made from Optimization.</p></div>
+          </div>
+          <div id="profile-channels" class="profile-channel-list"></div>
+        </section>
+
+        <section id="optimization-preview" class="panel optimization-preview" hidden>
+          <div class="panel-title">
+            <div>
+              <h3>Optimization plan</h3>
+              <p id="optimization-summary" class="meta"></p>
+            </div>
+            <button id="refresh-optimization" type="button">Refresh Plan</button>
+          </div>
+          <div id="optimization-policy" class="optimization-policy"></div>
+          <div id="optimization-channels" class="optimization-channel-list"></div>
+        </section>
+
+        <section id="export-preview" class="panel export-preview" hidden>
+          <div class="panel-title">
+            <div>
+              <h3>Export validation</h3>
+              <p id="export-preview-summary" class="meta"></p>
+            </div>
+            <div class="export-preview-actions">
+              <button id="export-cancel" type="button">Cancel</button>
+              <button id="export-confirm" type="button">Export M3U</button>
+            </div>
+          </div>
+          <div id="export-preview-metrics" class="export-preview-metrics"></div>
+          <div id="export-preview-warnings" class="export-preview-warnings"></div>
+        </section>
+      </section>
+    </div>
   </main>
-  <script src="/frontend/export-preview.js"></script>
+  <script src="/frontend/navigation.js"></script>
   <script src="/frontend/campaign.js"></script>
   <script src="/frontend/app.js"></script>
   <script src="/frontend/optimization.js"></script>
   <script src="/frontend/profile-mode.js"></script>
+  <script src="/frontend/export-preview.js"></script>
+  <script src="/frontend/dashboard.js"></script>
+  <script src="/frontend/import.js"></script>
 </body>
 </html>
