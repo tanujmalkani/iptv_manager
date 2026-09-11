@@ -10,6 +10,24 @@
     return ["Healthy", "healthy"];
   }
 
+  async function loadScopedChannel(channelId) {
+    state.selectedId = channelId;
+    renderChannels();
+    $("status").textContent = "Loading channel performance…";
+    try {
+      const params = new URLSearchParams();
+      if (state.playlistId != null) params.set("source_playlist_id", String(state.playlistId));
+      const query = params.toString();
+      const response = await fetch(`/api/channels/${channelId}${query ? `?${query}` : ""}`);
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      const channel = await response.json();
+      renderDetail(channel);
+      $("status").textContent = `Loaded ${channel.channel_name}`;
+    } catch (error) {
+      $("status").innerHTML = `<span class="error">Unable to load channel: ${escapeHtml(error.message)}</span>`;
+    }
+  }
+
   function ensureControls() {
     const panelTitle = document.querySelector(".channel-browser .panel-title");
     if (!panelTitle || document.getElementById("channel-filter-mode")) return;
@@ -62,8 +80,20 @@
           <span class="channel-status-line"><span class="status-pill ${tone}">${label}</span></span>
         </button>`;
     }).join("") : `<div class="empty">No channels match the current filters.</div>`;
-    document.querySelectorAll(".channel").forEach((button) => button.addEventListener("click", () => selectChannel(Number(button.dataset.id))));
   };
+
+  // app.js installs a direct click handler on each channel row. Capture the click
+  // here so the detail view uses the same playlist scope as the sidebar, including
+  // recursively discovered HLS child streams.
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest("button.channel");
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    loadScopedChannel(Number(button.dataset.id));
+  }, true);
 
   const originalRenderDetail = window.renderDetail;
   window.renderDetail = function renderDetailEnhanced(channel) {
