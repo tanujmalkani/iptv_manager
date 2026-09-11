@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Channel, PlaylistEntry, PlaylistProfile, SourcePlaylistVersion, Stream, StreamTest
+from app.db.models import (
+    Channel,
+    PlaylistEntry,
+    PlaylistProfile,
+    SourcePlaylistVersion,
+    Stream,
+    StreamTest,
+)
 from app.db.models.enums import VersionStatus
 from app.optimization import OptimizationProfile, build_optimization_plan
 
@@ -58,11 +65,12 @@ def export_m3u(
         if profile is None:
             return None
 
-    selected_entries = _select_entries(source_entries, source_by_channel, profile)
+    selected_entries = _select_entries(source_by_channel, profile)
     optimization = None
     if optimization_profile is not None and selected_entries:
         optimization = _build_optimization(
             session,
+            version.id,
             [entry.channel_id for entry in selected_entries],
             source_by_channel,
             optimization_profile,
@@ -125,7 +133,6 @@ def export_optimized_m3u(
 
 
 def _select_entries(
-    source_entries: list[PlaylistEntry],
     source_by_channel: dict[int, PlaylistEntry],
     profile: PlaylistProfile | None,
 ) -> list[PlaylistEntry]:
@@ -140,6 +147,7 @@ def _select_entries(
 
 def _build_optimization(
     session: Session,
+    version_id: int,
     channel_ids: list[int],
     source_by_channel: dict[int, PlaylistEntry],
     profile: OptimizationProfile,
@@ -150,20 +158,30 @@ def _build_optimization(
         .where(Channel.id.in_(channel_ids))
         .order_by(Channel.canonical_name, Channel.id)
     ).all()
-    stream_ids = {entry.stream_id for channel_id, entry in source_by_channel.items() if channel_id in channel_ids}
-    tests = session.scalars(
-        select(StreamTest)
-        .where(StreamTest.stream_id.in_(stream_ids))
-        .order_by(StreamTest.stream_id, StreamTest.completed_at, StreamTest.id)
-    ).all() if stream_ids else []
+    playlist_entries = session.scalars(
+        select(PlaylistEntry)
+        .where(
+            PlaylistEntry.source_playlist_version_id == version_id,
+            PlaylistEntry.channel_id.in_(channel_ids),
+        )
+    ).all()
+    stream_ids = {entry.stream_id for entry in playlist_entries}
+    tests = (
+        session.scalars(
+            select(StreamTest)
+            .where(StreamTest.stream_id.in_(stream_ids))
+            .order_by(StreamTest.stream_id, StreamTest.completed_at, StreamTest.id)
+        ).all()
+        if stream_ids
+        else []
+    )
     tests_by_stream: dict[int, list[StreamTest]] = {stream_id: [] for stream_id in stream_ids}
     for test in tests:
         tests_by_stream.setdefault(test.stream_id, []).append(test)
 
-    stream_ids_by_channel = {
-        channel.id: {stream.stream_id for stream in channel.streams}
-        for channel in channels
-    }
+    stream_ids_by_channel: dict[int, set[int]] = {channel.id: set() for channel in channels}
+    for entry in playlist_entries:
+        stream_ids_by_channel.setdefault(entry.channel_id, set()).add(entry.stream_id)
     plan = build_optimization_plan(channels, tests_by_stream, stream_ids_by_channel, profile)
     return {item.channel_id: item for item in plan.channels}
 
