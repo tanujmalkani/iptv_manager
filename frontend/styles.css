@@ -26,6 +26,7 @@ input[type="search"], input[type="text"] { width: 100%; padding: 9px 10px; borde
 .profile-row { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #f0f2f5; }
 .profile-row-actions { display: flex; gap: 5px; }
 .profile-row-actions button { padding: 4px 9px; }
+.profile-row-selection { color: #027a48; font-size: 12px; }
 .optimization-preview { margin-bottom: 16px; }
 .optimization-preview .panel-title { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
 .optimization-preview .panel-title h2 { margin-bottom: 3px; }
@@ -42,6 +43,8 @@ input[type="search"], input[type="text"] { width: 100%; padding: 9px 10px; borde
 .optimization-metrics { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 7px; font-size: 13px; }
 .optimization-components { margin-top: 6px; }
 .optimization-reason { margin-top: 7px; font-size: 13px; }
+.optimization-action { display: flex; justify-content: flex-end; margin-top: 9px; }
+.select-optimization-stream { padding: 6px 10px; font-size: 12px; }
 .channel-list { max-height: 72vh; overflow: auto; }
 .channel { display: block; width: 100%; text-align: left; background: white; color: #17202a; border-radius: 0; border-bottom: 1px solid #f0f2f5; padding: 13px 16px; }
 .channel:hover, .channel.selected { background: #f8fafc; }
