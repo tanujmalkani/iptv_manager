@@ -122,28 +122,31 @@ def test_campaign_records_worker_exceptions_as_failed_results() -> None:
 
 def test_campaign_cancellation_persists_completed_workers_and_stops_pending_work() -> None:
     session = make_session()
+    cancel_event = threading.Event()
     try:
         streams = add_streams(session, 8)
         engine = FakeCampaignEngine(delay=0.08)
-        cancel_event = threading.Event()
         runner = CampaignRunner(engine, test_type="quick", concurrency=2)
 
-        def cancel_after_first_result(_stream_test, _completed, _total) -> None:
+        def request_cancel() -> None:
+            time.sleep(0.03)
             cancel_event.set()
 
+        canceller = threading.Thread(target=request_cancel)
+        canceller.start()
         test_run = runner.run(
             session,
             name="Cancelled Campaign",
-            on_result=cancel_after_first_result,
             cancel_event=cancel_event,
         )
+        canceller.join()
 
         assert test_run.status == RunStatus.CANCELLED.value
         assert test_run.completed_streams == 2
         assert test_run.successful_streams == 2
         assert test_run.failed_streams == 0
         assert len(session.scalars(select(StreamTest)).all()) == 2
-        assert len(engine.calls) < len(streams)
+        assert len(engine.calls) == 2
         assert test_run.configuration_json["cancelled"] is True
     finally:
         session.close()
