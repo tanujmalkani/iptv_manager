@@ -84,10 +84,10 @@ class TestCampaignRunner:
                 attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
                 started_at=started_at,
                 completed_at=_utcnow(),
-                result=result.result,
+                result=result.result.value,
                 available=result.available,
                 error_stage=result.error_stage,
-                error_type=result.error_type,
+                error_type=result.error_type.value if result.error_type else None,
                 error_message=result.error_message,
                 dns_ms=result.dns_ms,
                 connect_ms=result.connect_ms,
@@ -101,6 +101,7 @@ class TestCampaignRunner:
                 extra_metrics=result.extra_metrics,
             )
             session.add(stream_test)
+
         test_run.configuration_json = {
             **(test_run.configuration_json or {}),
             "cancelled": cancelled,
@@ -123,6 +124,7 @@ class TestCampaignRunner:
     ) -> tuple[dict[int, QuickTestResult], bool]:
         if not streams:
             return {}, bool(cancel_event and cancel_event.is_set())
+
         executor = ThreadPoolExecutor(
             max_workers=min(self.concurrency, len(streams)),
             thread_name_prefix=f"{self.test_type}-campaign",
@@ -131,24 +133,21 @@ class TestCampaignRunner:
             executor.submit(self._safe_test, stream.url): stream.id for stream in streams
         }
         results: dict[int, QuickTestResult] = {}
-        cancelled = False
         try:
             for future in as_completed(futures):
+                if cancel_event is not None and cancel_event.is_set():
+                    break
                 if future.cancelled():
-                    cancelled = True
                     continue
                 results[futures[future]] = future.result()
-                if cancel_event is not None and cancel_event.is_set():
-                    cancelled = True
-                    break
         finally:
-            if cancel_event is not None and cancel_event.is_set():
-                cancelled = True
+            cancelled = bool(cancel_event and cancel_event.is_set())
             executor.shutdown(wait=True, cancel_futures=cancelled)
             for future, stream_id in futures.items():
                 if stream_id in results or future.cancelled() or not future.done():
                     continue
                 results[stream_id] = future.result()
+            cancelled = bool(cancel_event and cancel_event.is_set())
         return results, cancelled
 
     def _safe_test(self, url: str) -> QuickTestResult:
