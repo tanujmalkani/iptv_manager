@@ -18,7 +18,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 def export_source_playlist(
     source_playlist_id: int,
     session: DbSession,
-    optimization_profile: OptimizationProfile | None = Query(default=OptimizationProfile.FAST),
+    optimization_profile: OptimizationProfile | None = Query(default=None),
     playlist_profile_id: int | None = None,
     version_id: int | None = None,
 ) -> PlainTextResponse:
@@ -38,6 +38,8 @@ def export_source_playlist(
         parts.append(f"profile-{playlist_profile_id}")
     if optimization_profile is not None:
         parts.append(optimization_profile.value)
+    else:
+        parts.append("original")
     filename = f"{'-'.join(parts)}-v{result.source_playlist_version_number}.m3u"
     return PlainTextResponse(
         result.content,
