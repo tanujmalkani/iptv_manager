@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from threading import Thread
+from threading import Event, Lock, Thread
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +18,25 @@ router = APIRouter(prefix="/api", tags=["testing"])
 DbSession = Annotated[Session, Depends(get_db)]
 _DEFAULT_CONCURRENCY = 4
 _MAX_CONCURRENCY = 32
+_cancel_events: dict[int, Event] = {}
+_cancel_events_lock = Lock()
+
+
+def _register_cancel_event(test_run_id: int) -> Event:
+    event = Event()
+    with _cancel_events_lock:
+        _cancel_events[test_run_id] = event
+    return event
+
+
+def _get_cancel_event(test_run_id: int) -> Event | None:
+    with _cancel_events_lock:
+        return _cancel_events.get(test_run_id)
+
+
+def _remove_cancel_event(test_run_id: int) -> None:
+    with _cancel_events_lock:
+        _cancel_events.pop(test_run_id, None)
 
 
 def _run_tests(
@@ -28,10 +47,12 @@ def _run_tests(
     playback_duration_seconds: float,
     ffmpeg_binary: str,
     concurrency: int,
+    cancel_event: Event,
 ) -> None:
     with SessionLocal() as session:
         test_run = session.get(TestRun, test_run_id)
         if test_run is None:
+            _remove_cancel_event(test_run_id)
             return
         try:
             if test_type == TestType.DEEP.value:
@@ -55,6 +76,7 @@ def _run_tests(
                 name=test_run.name,
                 source_playlist_id=source_playlist_id,
                 existing_test_run=test_run,
+                cancel_event=cancel_event,
             )
         except Exception as exc:
             test_run.status = TestRunStatus.FAILED.value
@@ -64,6 +86,8 @@ def _run_tests(
                 "error": str(exc),
             }
             session.commit()
+        finally:
+            _remove_cancel_event(test_run_id)
 
 
 def _start_background_test(
@@ -75,6 +99,7 @@ def _start_background_test(
     ffmpeg_binary: str,
     concurrency: int,
 ) -> None:
+    cancel_event = _register_cancel_event(test_run_id)
     Thread(
         target=_run_tests,
         args=(
@@ -85,6 +110,7 @@ def _start_background_test(
             playback_duration_seconds,
             ffmpeg_binary,
             concurrency,
+            cancel_event,
         ),
         daemon=True,
         name=f"{test_type}-test-{test_run_id}",
@@ -161,6 +187,28 @@ def start_stream_tests(
         concurrency,
     )
     return {"test_run_id": test_run.id, "status": test_run.status}
+
+
+@router.post("/stream-tests/{test_run_id}/cancel", response_model=dict[str, int | str])
+def cancel_stream_test_run(
+    test_run_id: int,
+    session: DbSession,
+) -> dict[str, int | str]:
+    test_run = session.get(TestRun, test_run_id)
+    if test_run is None:
+        raise HTTPException(status_code=404, detail="Test run not found")
+    if test_run.status in {
+        TestRunStatus.COMPLETED.value,
+        TestRunStatus.CANCELLED.value,
+        TestRunStatus.FAILED.value,
+    }:
+        raise HTTPException(status_code=409, detail=f"Test run is already {test_run.status}")
+
+    event = _get_cancel_event(test_run_id)
+    if event is None:
+        raise HTTPException(status_code=409, detail="Test run is no longer active")
+    event.set()
+    return {"test_run_id": test_run.id, "status": "cancellation_requested"}
 
 
 @router.get("/stream-tests/{test_run_id}", response_model=dict[str, object])
