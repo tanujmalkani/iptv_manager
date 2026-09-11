@@ -62,6 +62,7 @@ class TestCampaignRunner:
                 profile=self.test_type,
                 status=TestRunStatus.PENDING,
                 started_at=_utcnow(),
+                total_streams=len(streams),
                 configuration_json={
                     "test_type": self.test_type,
                     "concurrency": self.concurrency,
@@ -77,55 +78,47 @@ class TestCampaignRunner:
             "test_type": self.test_type,
             "concurrency": self.concurrency,
         }
-        session.commit()
-
-        results, cancelled = self._test_streams(streams, cancel_event)
-        for stream in streams:
-            result = results.get(stream.id)
-            if result is None:
-                continue
-            stream_test = StreamTest(
-                stream_id=stream.id,
-                test_run_id=test_run.id,
-                test_type=self.test_type,
-                attempt_number=self._next_attempt_number(session, stream.id, self.test_type),
-                started_at=_utcnow(),
-                completed_at=_utcnow(),
-                result=_enum_value(result.result),
-                available=result.available,
-                error_stage=result.error_stage,
-                error_type=_enum_value(result.error_type),
-                error_message=result.error_message,
-                dns_ms=result.dns_ms,
-                connect_ms=result.connect_ms,
-                tls_ms=result.tls_ms,
-                http_response_ms=result.http_response_ms,
-                manifest_ms=result.manifest_ms,
-                first_data_ms=result.first_data_ms,
-                first_frame_ms=result.first_frame_ms,
-                bytes_received=result.bytes_received,
-                test_duration_ms=result.test_duration_ms,
-                extra_metrics=result.extra_metrics,
-            )
-            session.add(stream_test)
-
-        successful_streams = sum(1 for result in results.values() if result.available)
-        test_run.configuration_json = {
-            **(test_run.configuration_json or {}),
-            "cancelled": cancelled,
-        }
-        test_run.status = TestRunStatus.CANCELLED if cancelled else TestRunStatus.COMPLETED
-        test_run.completed_at = _utcnow()
         test_run.total_streams = len(streams)
-        test_run.completed_streams = len(results)
-        test_run.successful_streams = successful_streams
-        test_run.failed_streams = test_run.completed_streams - successful_streams
+        test_run.completed_streams = 0
+        test_run.successful_streams = 0
+        test_run.failed_streams = 0
         session.commit()
-        return test_run
+
+        try:
+            results, cancelled = self._test_streams(
+                session,
+                streams,
+                test_run,
+                cancel_event,
+            )
+            test_run.configuration_json = {
+                **(test_run.configuration_json or {}),
+                "cancelled": cancelled,
+            }
+            test_run.status = TestRunStatus.CANCELLED if cancelled else TestRunStatus.COMPLETED
+            test_run.completed_at = _utcnow()
+            session.commit()
+            return test_run
+        except Exception as exc:
+            session.rollback()
+            test_run = session.get(TestRun, test_run.id)
+            if test_run is None:
+                raise
+            test_run.status = TestRunStatus.FAILED
+            test_run.completed_at = _utcnow()
+            test_run.configuration_json = {
+                **(test_run.configuration_json or {}),
+                "error_type": type(exc).__name__,
+                "error": str(exc) or repr(exc),
+            }
+            session.commit()
+            raise
 
     def _test_streams(
         self,
+        session: Session,
         streams: list[Stream],
+        test_run: TestRun,
         cancel_event: Event | None,
     ) -> tuple[dict[int, QuickTestResult], bool]:
         if not streams:
@@ -145,7 +138,10 @@ class TestCampaignRunner:
                 if future.cancelled():
                     cancelled = True
                     continue
-                results[futures[future]] = future.result()
+                stream_id = futures[future]
+                result = future.result()
+                results[stream_id] = result
+                self._persist_result(session, test_run, stream_id, result)
                 if cancel_event is not None and cancel_event.is_set():
                     cancelled = True
                     break
@@ -155,9 +151,49 @@ class TestCampaignRunner:
             for future, stream_id in futures.items():
                 if stream_id in results or future.cancelled() or not future.done():
                     continue
-                results[stream_id] = future.result()
+                result = future.result()
+                results[stream_id] = result
+                self._persist_result(session, test_run, stream_id, result)
             cancelled = cancelled or bool(cancel_event and cancel_event.is_set())
         return results, cancelled
+
+    def _persist_result(
+        self,
+        session: Session,
+        test_run: TestRun,
+        stream_id: int,
+        result: QuickTestResult,
+    ) -> None:
+        stream_test = StreamTest(
+            stream_id=stream_id,
+            test_run_id=test_run.id,
+            test_type=self.test_type,
+            attempt_number=self._next_attempt_number(session, stream_id, self.test_type),
+            started_at=_utcnow(),
+            completed_at=_utcnow(),
+            result=_enum_value(result.result),
+            available=result.available,
+            error_stage=result.error_stage,
+            error_type=_enum_value(result.error_type),
+            error_message=result.error_message,
+            dns_ms=result.dns_ms,
+            connect_ms=result.connect_ms,
+            tls_ms=result.tls_ms,
+            http_response_ms=result.http_response_ms,
+            manifest_ms=result.manifest_ms,
+            first_data_ms=result.first_data_ms,
+            first_frame_ms=result.first_frame_ms,
+            bytes_received=result.bytes_received,
+            test_duration_ms=result.test_duration_ms,
+            extra_metrics=result.extra_metrics,
+        )
+        session.add(stream_test)
+        test_run.completed_streams += 1
+        if result.available:
+            test_run.successful_streams += 1
+        else:
+            test_run.failed_streams += 1
+        session.commit()
 
     def _safe_test(self, url: str) -> QuickTestResult:
         try:
@@ -168,7 +204,7 @@ class TestCampaignRunner:
                 available=False,
                 error_stage="runner",
                 error_type=ErrorType.UNKNOWN,
-                error_message=str(exc),
+                error_message=f"{type(exc).__name__}: {str(exc) or repr(exc)}",
             )
 
     @staticmethod
