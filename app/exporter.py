@@ -84,23 +84,19 @@ def export_m3u(
     profile_entries = {entry.channel_id: entry for entry in profile.entries} if profile else {}
     for entry in selected_entries:
         profile_entry = profile_entries.get(entry.channel_id)
-        stream_url = entry.stream.url
-        explicit_stream_id = profile_entry.selected_stream_id if profile_entry else None
-        if explicit_stream_id is not None:
-            explicit_stream = session.get(Stream, explicit_stream_id)
-            if explicit_stream is not None:
-                stream_url = explicit_stream.url
-        elif optimization is not None:
-            channel_plan = optimization.get(entry.channel_id)
-            primary_stream_id = channel_plan.primary_stream_id if channel_plan else None
-            if primary_stream_id is not None:
-                primary_stream = session.get(Stream, primary_stream_id)
-                if primary_stream is not None:
-                    stream_url = primary_stream.url
+        chosen_stream_id, used_fallback, _ = _resolve_stream_choice(
+            session,
+            version.id,
+            entry,
+            profile_entry,
+            optimization,
+        )
+        chosen_stream = session.get(Stream, chosen_stream_id)
+        stream_url = chosen_stream.url if chosen_stream is not None else entry.stream.url
 
         if stream_url != entry.stream.url:
             optimized_count += 1
-        else:
+        if used_fallback:
             fallback_count += 1
 
         output.extend(entry.original_directives or [])
@@ -170,39 +166,31 @@ def preview_m3u(
 
     for entry in selected_entries:
         profile_entry = profile_entries.get(entry.channel_id)
-        explicit_stream_id = profile_entry.selected_stream_id if profile_entry else None
-        chosen_stream_id = entry.stream_id
-        if explicit_stream_id is not None:
+        (
+            chosen_stream_id,
+            used_fallback,
+            invalid_reason,
+        ) = _resolve_stream_choice(session, version.id, entry, profile_entry, optimization)
+
+        if profile_entry and profile_entry.selected_stream_id is not None:
             manual_count += 1
-            chosen_stream = session.get(Stream, explicit_stream_id)
-            if chosen_stream is None or not _stream_belongs_to_channel(
-                session, version.id, entry.channel_id, explicit_stream_id
-            ):
+            if invalid_reason is not None:
                 invalid_selection_count += 1
                 warnings.append(
-                    f"{entry.channel.canonical_name}: selected stream #{explicit_stream_id} "
-                    "is not a valid playable option and will use the source stream"
+                    f"{entry.channel.canonical_name}: selected stream #{profile_entry.selected_stream_id} "
+                    f"{invalid_reason}; source stream retained"
                 )
-            elif chosen_stream.stream_kind == "master_playlist":
-                invalid_selection_count += 1
-                warnings.append(
-                    f"{entry.channel.canonical_name}: selected stream #{explicit_stream_id} "
-                    "is a master playlist and will use the source stream"
-                )
-            else:
-                chosen_stream_id = explicit_stream_id
         elif optimization is not None:
             automatic_count += 1
-            channel_plan = optimization.get(entry.channel_id)
-            if channel_plan and channel_plan.primary_stream_id is not None:
-                chosen_stream_id = channel_plan.primary_stream_id
-            else:
-                fallback_count += 1
+            if used_fallback:
                 warnings.append(
                     f"{entry.channel.canonical_name}: no eligible tested stream for "
                     f"{optimization_profile.value} optimization; source stream retained"
                 )
         else:
+            fallback_count += 1
+
+        if used_fallback and profile_entry and profile_entry.selected_stream_id is not None:
             fallback_count += 1
 
         if chosen_stream_id != entry.stream_id:
@@ -257,6 +245,36 @@ def export_optimized_m3u(
         version_id=version_id,
         optimization_profile=OptimizationProfile.FAST,
     )
+
+
+def _resolve_stream_choice(
+    session: Session,
+    version_id: int,
+    entry: PlaylistEntry,
+    profile_entry,
+    optimization,
+) -> tuple[int, bool, str | None]:
+    """Return the same validated stream choice used by preview and export."""
+    chosen_stream_id = entry.stream_id
+    explicit_stream_id = profile_entry.selected_stream_id if profile_entry else None
+    if explicit_stream_id is not None:
+        chosen_stream = session.get(Stream, explicit_stream_id)
+        if chosen_stream is None:
+            return chosen_stream_id, True, "is missing from the database"
+        if chosen_stream.stream_kind == "master_playlist":
+            return chosen_stream_id, True, "is a master playlist"
+        if not _stream_belongs_to_channel(session, version_id, entry.channel_id, explicit_stream_id):
+            return chosen_stream_id, True, "is not a valid playable option for this playlist version"
+        return explicit_stream_id, False, None
+
+    if optimization is not None:
+        channel_plan = optimization.get(entry.channel_id)
+        primary_stream_id = channel_plan.primary_stream_id if channel_plan else None
+        if primary_stream_id is not None and session.get(Stream, primary_stream_id) is not None:
+            return primary_stream_id, primary_stream_id == entry.stream_id, None
+        return chosen_stream_id, True, None
+
+    return chosen_stream_id, True, None
 
 
 def _load_source_entries(session: Session, version_id: int) -> list[PlaylistEntry]:
