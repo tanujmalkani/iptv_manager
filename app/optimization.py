@@ -136,5 +136,6 @@ def eligible_stream_ids(
     return {
         channel_stream.stream_id
         for channel_stream in channel_streams
-        if channel_stream.stream_id in streams and is_playable_stream(streams[channel_stream.stream_id])
+        if channel_stream.stream_id in streams
+        and is_playable_stream(streams[channel_stream.stream_id])
     }
