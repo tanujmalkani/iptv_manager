@@ -7,7 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import PlaylistProfileRequest, PlaylistProfileResponse
 from app.db.session import get_db
-from app.profiles import PlaylistProfileInput, ProfileEntryInput, create_profile, get_profile, list_profiles, update_profile
+from app.profiles import (
+    PlaylistProfileInput,
+    ProfileEntryInput,
+    create_profile,
+    get_profile,
+    list_profiles,
+    update_profile,
+)
 
 router = APIRouter(prefix="/api/playlist-profiles", tags=["playlist-profiles"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -36,7 +43,10 @@ def list_playlist_profiles(
     session: DbSession,
     source_playlist_id: int | None = None,
 ) -> list[PlaylistProfileResponse]:
-    return [PlaylistProfileResponse.from_model(item) for item in list_profiles(session, source_playlist_id)]
+    return [
+        PlaylistProfileResponse.from_model(item)
+        for item in list_profiles(session, source_playlist_id)
+    ]
 
 
 @router.get("/{profile_id}", response_model=PlaylistProfileResponse)
