@@ -1,3 +1,4 @@
+from app.testing.campaign import TestCampaignRunner
 from app.testing.deep import DeepTestEngine, DeepTestRunner
 from app.testing.quick import QuickTestEngine, QuickTestResult, QuickTestRunner
 from app.testing.stream import StreamTestEngine, StreamTestRunner
@@ -10,4 +11,5 @@ __all__ = [
     "QuickTestRunner",
     "StreamTestEngine",
     "StreamTestRunner",
+    "TestCampaignRunner",
 ]
