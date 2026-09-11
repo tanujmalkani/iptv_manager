@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -142,6 +143,7 @@ class PlaylistProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     source_playlist_id: int = Field(gt=0)
     description: str | None = None
+    stream_mode: Literal["source", "fast", "reliable", "all"] = "source"
     entries: list[PlaylistProfileEntryRequest] = Field(default_factory=list)
 
 
