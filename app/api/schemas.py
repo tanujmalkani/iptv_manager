@@ -278,3 +278,41 @@ class OptimizationPlanResponse(BaseModel):
             ),
             channels=[OptimizationChannelResponse.from_model(item) for item in plan.channels],
         )
+
+
+class ExportPreviewResponse(BaseModel):
+    source_playlist_version_id: int
+    source_playlist_version_number: int
+    source_entry_count: int
+    channel_count: int
+    duplicate_channel_entries: int
+    optimized_count: int
+    manual_selection_count: int
+    automatic_selection_count: int
+    fallback_count: int
+    untested_count: int
+    no_successful_test_count: int
+    invalid_selection_count: int
+    warnings: list[str]
+    playlist_profile_id: int | None
+    optimization_profile: str | None
+
+    @classmethod
+    def from_model(cls, preview) -> ExportPreviewResponse:
+        return cls(
+            source_playlist_version_id=preview.source_playlist_version_id,
+            source_playlist_version_number=preview.source_playlist_version_number,
+            source_entry_count=preview.source_entry_count,
+            channel_count=preview.channel_count,
+            duplicate_channel_entries=preview.duplicate_channel_entries,
+            optimized_count=preview.optimized_count,
+            manual_selection_count=preview.manual_selection_count,
+            automatic_selection_count=preview.automatic_selection_count,
+            fallback_count=preview.fallback_count,
+            untested_count=preview.untested_count,
+            no_successful_test_count=preview.no_successful_test_count,
+            invalid_selection_count=preview.invalid_selection_count,
+            warnings=list(preview.warnings),
+            playlist_profile_id=preview.playlist_profile_id,
+            optimization_profile=preview.optimization_profile,
+        )
