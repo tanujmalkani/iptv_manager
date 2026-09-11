@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -11,8 +13,11 @@ from app.db.models import (
     SourcePlaylist,
     SourcePlaylistVersion,
     Stream,
+    StreamTest,
+    TestRun,
 )
 from app.exporter import export_m3u, preview_m3u
+from app.optimization import OptimizationProfile
 
 
 def make_session() -> Session:
@@ -150,5 +155,55 @@ def test_preview_and_export_reject_master_playlist_selection() -> None:
         assert result.fallback_count == 1
         assert source_stream.url in result.content
         assert master_stream.url not in result.content
+    finally:
+        session.close()
+
+
+def test_preview_with_optimization_handles_existing_test_history() -> None:
+    session = make_session()
+    try:
+        playlist, _, _, source_stream = make_playlist(session)
+        test_run = TestRun(
+            source_playlist_id=playlist.id,
+            name="Export preview test",
+            profile="quick",
+            status="completed",
+        )
+        session.add(test_run)
+        session.flush()
+        now = datetime.now(UTC).replace(tzinfo=None)
+        session.add(
+            StreamTest(
+                test_run_id=test_run.id,
+                stream_id=source_stream.id,
+                attempt_number=1,
+                test_type="quick",
+                result="success",
+                started_at=now,
+                completed_at=now,
+                available=True,
+                first_frame_ms=100.0,
+            )
+        )
+        session.commit()
+
+        preview = preview_m3u(
+            session,
+            playlist.id,
+            optimization_profile=OptimizationProfile.FAST,
+        )
+        result = export_m3u(
+            session,
+            playlist.id,
+            optimization_profile=OptimizationProfile.FAST,
+        )
+
+        assert preview is not None
+        assert result is not None
+        assert preview.optimized_count == 0
+        assert preview.automatic_selection_count == 1
+        assert preview.untested_count == 0
+        assert preview.no_successful_test_count == 0
+        assert result.content.count(source_stream.url) == 1
     finally:
         session.close()
