@@ -1,11 +1,21 @@
-from __future__ import annotations
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.db.models import Base, Channel, ChannelStream, SourcePlaylist, SourcePlaylistVersion, Stream, StreamTest, TestRun
+from app.db.models import (
+    Base,
+    Channel,
+    ChannelStream,
+    PlaylistEntry,
+    SourcePlaylist,
+    SourcePlaylistVersion,
+    Stream,
+    StreamTest,
+    TestRun,
+)
 from app.db.session import get_db
 from app.main import app
 
@@ -26,10 +36,28 @@ def make_client() -> tuple[TestClient, Session]:
     return TestClient(app), session
 
 
-def test_source_playlist_api_returns_latest_version() -> None:
+def test_frontend_and_health_are_served() -> None:
     client, session = make_client()
     try:
-        playlist = SourcePlaylist(name="Test Playlist", source_type="text", source_location="test")
+        assert client.get("/").status_code == 200
+        assert "IPTV Manager" in client.get("/").text
+        assert client.get("/frontend/app.js").status_code == 200
+        assert client.get("/frontend/styles.css").status_code == 200
+        assert client.get("/health").json() == {"status": "ok"}
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_source_playlist_api_returns_latest_completed_version() -> None:
+    client, session = make_client()
+    try:
+        playlist = SourcePlaylist(
+            name="Test Playlist",
+            source_type="text",
+            source_location="test",
+            entry_count=2,
+        )
         session.add(playlist)
         session.flush()
         session.add_all(
@@ -37,16 +65,23 @@ def test_source_playlist_api_returns_latest_version() -> None:
                 SourcePlaylistVersion(
                     source_playlist_id=playlist.id,
                     version_number=1,
-                    content_hash="hash-1",
+                    content_hash="a" * 64,
                     entry_count=2,
                     status="completed",
                 ),
                 SourcePlaylistVersion(
                     source_playlist_id=playlist.id,
                     version_number=2,
-                    content_hash="hash-2",
+                    content_hash="b" * 64,
                     entry_count=3,
                     status="completed",
+                ),
+                SourcePlaylistVersion(
+                    source_playlist_id=playlist.id,
+                    version_number=3,
+                    content_hash="c" * 64,
+                    entry_count=4,
+                    status="importing",
                 ),
             ]
         )
@@ -118,12 +153,165 @@ def test_performance_api_returns_channel_and_stream_metrics() -> None:
         session.add_all([channel, stream])
         session.flush()
         session.add(ChannelStream(channel_id=channel.id, stream_id=stream.id))
+        test_run = TestRun(name="Stream Test", profile="quick", status="completed")
+        session.add(test_run)
+        session.flush()
+        session.add(
+            StreamTest(
+                test_run_id=test_run.id,
+                stream_id=stream.id,
+                attempt_number=1,
+                test_type="quick",
+                result="success",
+                started_at=datetime.now(UTC).replace(tzinfo=None),
+                completed_at=datetime.now(UTC).replace(tzinfo=None),
+                available=True,
+                first_frame_ms=250.0,
+                extra_metrics={
+                    "playback_duration_ms": 10_000.0,
+                    "observed_fps": 25.0,
+                    "stable": True,
+                },
+            )
+        )
         session.commit()
-        response = client.get(f"/api/channels/{channel.id}")
+
+        summaries = client.get("/api/channels")
+        assert summaries.status_code == 200
+        assert summaries.json()[0]["channel_name"] == "News"
+        assert summaries.json()[0]["primary_stream_id"] == stream.id
+
+        detail = client.get(f"/api/channels/{channel.id}")
+        assert detail.status_code == 200
+        body = detail.json()
+        assert body["primary_stream_id"] == stream.id
+        assert body["streams"][0]["is_primary"] is True
+        assert body["streams"][0]["performance"]["median_first_frame_ms"] == 250.0
+
+        stream_performance = client.get(f"/api/streams/{stream.id}/performance")
+        assert stream_performance.status_code == 200
+        assert stream_performance.json()["success_rate"] == 1.0
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_optimized_m3u_export_uses_primary_stream_and_preserves_metadata() -> None:
+    client, session = make_client()
+    try:
+        playlist = SourcePlaylist(
+            name="Test Playlist",
+            source_type="text",
+            source_location="test",
+        )
+        version = SourcePlaylistVersion(
+            source_playlist=playlist,
+            version_number=1,
+            content_hash="a" * 64,
+            entry_count=2,
+            original_header="#EXTM3U x-tvg-url=\"https://epg.test/guide.xml\"",
+            status="completed",
+        )
+        channel = Channel(canonical_name="News", normalized_name="news")
+        original = Stream(
+            url="https://example.test/original.m3u8",
+            normalized_url="https://example.test/original.m3u8",
+            stream_kind="media_playlist",
+        )
+        faster = Stream(
+            url="https://example.test/fast.m3u8",
+            normalized_url="https://example.test/fast.m3u8",
+            stream_kind="media_playlist",
+        )
+        session.add_all([playlist, version, channel, original, faster])
+        session.flush()
+        session.add_all(
+            [
+                ChannelStream(channel_id=channel.id, stream_id=original.id),
+                ChannelStream(channel_id=channel.id, stream_id=faster.id),
+                PlaylistEntry(
+                    source_playlist_version_id=version.id,
+                    channel_id=channel.id,
+                    stream_id=original.id,
+                    original_position=0,
+                    original_name="News HD",
+                    original_group="News",
+                    original_tvg_id="news.uk",
+                    original_attributes={
+                        "tvg-id": "news.uk",
+                        "group-title": "News",
+                    },
+                    original_directives=["#EXTVLCOPT:http-referrer=https://example.test"],
+                    raw_extinf=(
+                        '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD'
+                    ),
+                ),
+                PlaylistEntry(
+                    source_playlist_version_id=version.id,
+                    channel_id=channel.id,
+                    stream_id=faster.id,
+                    original_position=1,
+                    original_name="News HD fast",
+                    original_group="News",
+                    original_tvg_id="news.uk",
+                    original_attributes={
+                        "tvg-id": "news.uk",
+                        "group-title": "News",
+                    },
+                    original_directives=[],
+                    raw_extinf=(
+                        '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD fast'
+                    ),
+                ),
+            ]
+        )
+        test_run = TestRun(name="Stream Test", profile="quick", status="completed")
+        session.add(test_run)
+        session.flush()
+        session.add(
+            StreamTest(
+                test_run_id=test_run.id,
+                stream_id=faster.id,
+                attempt_number=1,
+                test_type="quick",
+                result="success",
+                started_at=datetime.now(UTC).replace(tzinfo=None),
+                completed_at=datetime.now(UTC).replace(tzinfo=None),
+                available=True,
+                first_frame_ms=100.0,
+            )
+        )
+        session.commit()
+
+        response = client.get(f"/api/source-playlists/{playlist.id}/optimized.m3u")
         assert response.status_code == 200
-        body = response.json()
-        assert body["channel_id"] == channel.id
-        assert body["streams"][0]["stream_id"] == stream.id
+        assert response.headers["content-type"].startswith("audio/x-mpegurl")
+        assert response.headers["content-disposition"].endswith('"')
+        assert response.text == (
+            '#EXTM3U x-tvg-url="https://epg.test/guide.xml"\n'
+            "#EXTVLCOPT:http-referrer=https://example.test\n"
+            '#EXTINF:-1 tvg-id="news.uk" group-title="News",News HD\n'
+            "https://example.test/fast.m3u8\n"
+        )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_export_returns_404_when_completed_version_is_missing() -> None:
+    client, session = make_client()
+    try:
+        assert client.get("/api/source-playlists/999/optimized.m3u").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_performance_api_returns_404_for_unknown_resources() -> None:
+    client, session = make_client()
+    try:
+        assert client.get("/api/channels/999").status_code == 404
+        assert client.get("/api/streams/999/performance").status_code == 404
     finally:
         app.dependency_overrides.clear()
         session.close()
