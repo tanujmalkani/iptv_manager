@@ -109,7 +109,7 @@ class TestCampaignRunner:
         test_run.completed_at = _utcnow()
         test_run.total_streams = len(streams)
         test_run.completed_streams = len(results)
-        test_run.successful_streams = sum(1 for result in results.values() if result.available)
+        test_run.successful_streams = sum(1 for result in results.values() if result.result == TestResult.SUCCESS)
         test_run.failed_streams = test_run.completed_streams - test_run.successful_streams
         session.commit()
         return test_run
@@ -156,10 +156,10 @@ class TestCampaignRunner:
             return self.engine.test(url, deep=False)
         except Exception as exc:  # noqa: BLE001
             return QuickTestResult(
-                result=TestResult.FAILURE,
+                result=TestResult.FAILED,
                 available=False,
                 error_stage="runner",
-                error_type=ErrorType.EXCEPTION,
+                error_type=ErrorType.UNKNOWN,
                 error_message=str(exc),
             )
 
