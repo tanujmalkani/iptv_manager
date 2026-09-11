@@ -85,7 +85,9 @@ def build_channel_optimization(
         performance = aggregate_stream_tests(channel_stream.stream_id, tests)
         if performance.successful_tests == 0:
             continue
-        if performance.success_rate < policy.minimum_success_rate:
+        if performance.success_rate < policy.minimum_success_rate and not (
+            profile is OptimizationProfile.FAST and _has_successful_deep_validation(tests)
+        ):
             continue
         performances.append(performance)
 
@@ -103,6 +105,13 @@ def build_channel_optimization(
         channel_name=channel.canonical_name,
         candidates=tuple(ranked),
         primary_stream_id=primary,
+    )
+
+
+def _has_successful_deep_validation(tests: Sequence[StreamTest]) -> bool:
+    """Treat a successful deep test as authoritative for Fast-profile eligibility."""
+    return any(
+        test.test_type == "deep" and test.available and test.result == "success" for test in tests
     )
 
 
