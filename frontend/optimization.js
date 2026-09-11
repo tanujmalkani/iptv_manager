@@ -32,22 +32,74 @@ async function selectOptimizationStream(channelId, streamId) {
   await saveProfile();
 }
 
+async function applyOptimizationRecommendations() {
+  const playlist = selectedPlaylist();
+  const profile = state.optimization;
+  if (!playlist || playlist.latest_version_id == null || !profile || state.polling) return;
+
+  $("status").textContent = `Applying ${optimizationLabel(profile)} recommendations…`;
+  try {
+    const plan = await getJson(
+      `/api/source-playlists/${playlist.id}/optimization?profile=${encodeURIComponent(profile)}`,
+    );
+    const entriesByChannel = new Map(state.profileEntries.map((entry) => [entry.channel_id, entry]));
+    let applied = 0;
+    let skipped = 0;
+
+    for (const channel of plan.channels) {
+      const entry = entriesByChannel.get(channel.channel_id);
+      if (!entry || channel.primary_stream_id == null) {
+        if (entry) skipped += 1;
+        continue;
+      }
+      if (entry.selected_stream_id != null) {
+        skipped += 1;
+        continue;
+      }
+      entry.selected_stream_id = channel.primary_stream_id;
+      applied += 1;
+    }
+
+    renderProfileEditor();
+    if (state.profileId == null) {
+      $("profile-name").focus();
+      $("status").textContent = `Applied ${applied} recommendations; ${skipped} existing selections preserved. Enter a profile name and click Save Profile.`;
+      return;
+    }
+
+    await saveProfile();
+    if (applied === 0) {
+      $("status").textContent = `No new ${optimizationLabel(profile)} recommendations applied; existing selections were preserved.`;
+    }
+  } catch (error) {
+    $("status").innerHTML = `<span class="error">Unable to apply recommendations: ${escapeHtml(error.message)}</span>`;
+  }
+}
+
 function renderOptimizationPlan(plan) {
   const preview = $("optimization-preview");
   preview.hidden = false;
   const policy = plan.policy;
   const profile = optimizationLabel(plan.profile);
-  $("optimization-summary").textContent = `${profile} profile · source playlist v${plan.version_number} · ${plan.channels.length} channels`;
+  const selectedCount = state.profileEntries.filter((entry) => entry.selected_stream_id != null).length;
+  $("optimization-summary").textContent = `${profile} profile · source playlist v${plan.version_number} · ${plan.channels.length} channels · ${selectedCount} selections already set`;
   $("optimization-policy").innerHTML = `
-    <div><strong>What drives the score</strong></div>
-    <div class="policy-items">
-      <span>Reliability ${Math.round(policy.reliability_weight * 100)}%</span>
-      <span>Speed ${Math.round(policy.speed_weight * 100)}%</span>
-      <span>P95 ${Math.round(policy.p95_weight * 100)}%</span>
-      <span>Stability ${Math.round(policy.stability_weight * 100)}%</span>
-      <span>Evidence ${Math.round(policy.evidence_weight * 100)}%</span>
-      <span>Min success ${Math.round(policy.minimum_success_rate * 100)}%</span>
+    <div class="optimization-toolbar">
+      <div>
+        <strong>What drives the score</strong>
+        <div class="policy-items">
+          <span>Reliability ${Math.round(policy.reliability_weight * 100)}%</span>
+          <span>Speed ${Math.round(policy.speed_weight * 100)}%</span>
+          <span>P95 ${Math.round(policy.p95_weight * 100)}%</span>
+          <span>Stability ${Math.round(policy.stability_weight * 100)}%</span>
+          <span>Evidence ${Math.round(policy.evidence_weight * 100)}%</span>
+          <span>Min success ${Math.round(policy.minimum_success_rate * 100)}%</span>
+        </div>
+        <div class="meta optimization-help">Apply Recommendations fills only channels without a selected stream, so manual selections are preserved.</div>
+      </div>
+      <button id="apply-optimization" type="button">Apply Recommendations</button>
     </div>`;
+  $("apply-optimization").addEventListener("click", applyOptimizationRecommendations);
 
   $("optimization-channels").innerHTML = plan.channels.length ? plan.channels.map((channel) => `
     <article class="optimization-channel">
