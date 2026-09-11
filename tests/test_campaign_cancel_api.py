@@ -31,6 +31,7 @@ def test_cancel_stream_test_api_sets_cancellation_event(monkeypatch) -> None:
     client, session = make_client()
     event = Event()
     try:
+
         def fake_start(test_run_id, *args):
             with testing_api._cancel_events_lock:
                 testing_api._cancel_events[test_run_id] = event
