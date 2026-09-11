@@ -1,4 +1,16 @@
-const state = { channels: [], selectedId: null, playlists: [], playlistId: null, testRunId: null, polling: false, testType: null };
+const state = {
+  channels: [],
+  selectedId: null,
+  playlists: [],
+  playlistId: null,
+  profiles: [],
+  profileId: null,
+  profileEntries: [],
+  optimization: "fast",
+  testRunId: null,
+  polling: false,
+  testType: null,
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -14,6 +26,7 @@ async function getJson(url) {
 }
 
 function selectedPlaylist() { return state.playlists.find((item) => item.id === state.playlistId) || null; }
+function selectedProfile() { return state.profiles.find((item) => item.id === state.profileId) || null; }
 
 function renderPlaylists() {
   const select = $("playlist");
@@ -21,15 +34,101 @@ function renderPlaylists() {
     const version = item.latest_version_number == null ? "no completed version" : `v${item.latest_version_number}`;
     return `<option value="${item.id}">${escapeHtml(item.name)} · ${version}</option>`;
   }).join("");
-  if (state.playlistId != null && state.playlists.some((item) => item.id === state.playlistId)) select.value = String(state.playlistId);
+  if (state.playlistId != null) select.value = String(state.playlistId);
+
   const playlist = selectedPlaylist();
   const ready = playlist?.latest_version_id != null;
   $("test").disabled = !ready || state.polling;
   $("deep-test").disabled = !ready || state.polling;
   $("export").disabled = !ready || state.polling;
+  $("save-profile").disabled = !ready || state.polling;
   $("playlist-summary").textContent = playlist
     ? `${playlist.entry_count} source entries · latest ${playlist.latest_version_number == null ? "—" : `v${playlist.latest_version_number}`}`
     : "Select a source playlist";
+}
+
+function renderProfiles() {
+  const select = $("profile");
+  select.innerHTML = `<option value="">Input playlist</option>` + state.profiles.map((item) =>
+    `<option value="${item.id}">${escapeHtml(item.name)} · ${item.entries.length} channels</option>`
+  ).join("");
+  if (state.profileId != null) select.value = String(state.profileId);
+  renderProfileEditor();
+}
+
+function renderProfileEditor() {
+  const editor = $("profile-editor");
+  if (state.profileId == null && !$("profile-name").value) {
+    editor.hidden = false;
+    $("profile-name").value = "";
+  } else if (state.profileId != null) {
+    editor.hidden = false;
+    const profile = selectedProfile();
+    $("profile-name").value = profile?.name || "";
+  } else {
+    editor.hidden = false;
+  }
+
+  const order = new Map(state.profileEntries.map((item, index) => [item.channel_id, index]));
+  const channelById = new Map(state.channels.map((item) => [item.channel_id, item]));
+  const rows = state.profileEntries.filter((item) => channelById.has(item.channel_id));
+  $("profile-channels").innerHTML = rows.length ? rows.map((item, index) => {
+    const channel = channelById.get(item.channel_id);
+    return `<div class="profile-row" data-id="${item.channel_id}">
+      <input type="checkbox" class="profile-enabled" ${item.enabled ? "checked" : ""} aria-label="Include ${escapeHtml(channel.channel_name)}">
+      <strong>${index + 1}. ${escapeHtml(channel.channel_name)}</strong>
+      <div class="profile-row-actions">
+        <button class="profile-up" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button class="profile-down" ${index === rows.length - 1 ? "disabled" : ""}>↓</button>
+      </div>
+    </div>`;
+  }).join("") : `<div class="empty">No channels available.</div>`;
+
+  document.querySelectorAll(".profile-row").forEach((row) => {
+    const id = Number(row.dataset.id);
+    row.querySelector(".profile-enabled").addEventListener("change", (event) => {
+      const entry = state.profileEntries.find((item) => item.channel_id === id);
+      if (entry) entry.enabled = event.target.checked;
+    });
+    row.querySelector(".profile-up").addEventListener("click", () => moveProfileEntry(id, -1));
+    row.querySelector(".profile-down").addEventListener("click", () => moveProfileEntry(id, 1));
+  });
+  void order;
+}
+
+function moveProfileEntry(channelId, delta) {
+  const index = state.profileEntries.findIndex((item) => item.channel_id === channelId);
+  const target = index + delta;
+  if (index < 0 || target < 0 || target >= state.profileEntries.length) return;
+  [state.profileEntries[index], state.profileEntries[target]] = [state.profileEntries[target], state.profileEntries[index]];
+  state.profileEntries.forEach((item, position) => { item.position = position; });
+  renderProfileEditor();
+}
+
+function startNewProfile() {
+  state.profileId = null;
+  state.profileEntries = state.channels.map((item, position) => ({
+    channel_id: item.channel_id,
+    position,
+    enabled: true,
+    group_name: null,
+    selected_stream_id: null,
+  }));
+  $("profile-name").value = "";
+  $("profile").value = "";
+  renderProfileEditor();
+}
+
+async function loadProfiles() {
+  if (state.playlistId == null) {
+    state.profiles = [];
+    state.profileId = null;
+    renderProfiles();
+    return;
+  }
+  state.profiles = await getJson(`/api/playlist-profiles?source_playlist_id=${encodeURIComponent(state.playlistId)}`);
+  if (state.profileId != null && !state.profiles.some((item) => item.id === state.profileId)) state.profileId = null;
+  renderProfiles();
 }
 
 function renderChannels() {
@@ -74,7 +173,7 @@ function renderDetail(channel) {
       <div class="metric"><div class="value">${formatMs(best)}</div><div class="label">Best median startup</div></div>
       <div class="metric"><div class="value">${channel.primary_stream_id == null ? "—" : `#${channel.primary_stream_id}`}</div><div class="label">Recommended</div></div>
     </div>
-    <div class="section-heading"><div><h3>Stream ranking</h3><p class="meta">Reliability is weighted more heavily than raw speed.</p></div><span class="meta">${tested.length} of ${channel.streams.length} tested</span></div>
+    <div class="section-heading"><div><h3>Stream ranking</h3><p class="meta">Use Fast, Reliable, or All when exporting.</p></div><span class="meta">${tested.length} of ${channel.streams.length} tested</span></div>
     <div class="stream-list">${channel.streams.map(renderStream).join("")}</div>`;
 }
 
@@ -120,7 +219,12 @@ async function loadChannels() {
       state.selectedId = null; $("empty").hidden = false; $("channel-detail").hidden = true;
     }
     renderChannels();
-    if (state.selectedId != null && state.channels.some((item) => item.channel_id === state.selectedId)) await selectChannel(state.selectedId);
+    if (state.profileId == null) startNewProfile();
+    else {
+      const profile = selectedProfile();
+      state.profileEntries = profile ? profile.entries.map((item) => ({ ...item })) : [];
+      renderProfileEditor();
+    }
   } catch (error) { $("status").innerHTML = `<span class="error">Channel API error: ${escapeHtml(error.message)}</span>`; }
 }
 
@@ -167,16 +271,50 @@ async function startTest(testType) {
   } catch (error) { state.polling = false; renderPlaylists(); $("status").innerHTML = `<span class="error">Test start failed: ${escapeHtml(error.message)}</span>`; }
 }
 
+async function saveProfile() {
+  const playlist = selectedPlaylist();
+  const name = $("profile-name").value.trim();
+  if (!playlist || !name || state.polling) return;
+  const payload = {
+    name,
+    source_playlist_id: state.playlistId,
+    description: null,
+    entries: state.profileEntries.map((entry, position) => ({
+      channel_id: entry.channel_id,
+      position,
+      enabled: entry.enabled,
+      group_name: entry.group_name || null,
+      selected_stream_id: entry.selected_stream_id || null,
+    })),
+  };
+  try {
+    const url = state.profileId == null ? "/api/playlist-profiles" : `/api/playlist-profiles/${state.profileId}`;
+    const response = await fetch(url, {
+      method: state.profileId == null ? "POST" : "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const profile = await response.json();
+    state.profileId = profile.id;
+    await loadProfiles();
+    $("profile").value = String(profile.id);
+    $("status").textContent = `Saved playlist profile ${profile.name}`;
+  } catch (error) { $("status").innerHTML = `<span class="error">Profile save failed: ${escapeHtml(error.message)}</span>`; }
+}
+
 async function exportPlaylist() {
   if (state.playlistId == null || state.polling) return;
   const playlist = selectedPlaylist(); if (!playlist || playlist.latest_version_id == null) return;
-  $("status").textContent = "Preparing optimized playlist…";
+  $("status").textContent = "Preparing playlist…";
   try {
-    const response = await fetch(`/api/source-playlists/${state.playlistId}/optimized.m3u`);
+    const params = new URLSearchParams({ optimization_profile: state.optimization });
+    if (state.profileId != null) params.set("playlist_profile_id", state.profileId);
+    const response = await fetch(`/api/source-playlists/${state.playlistId}/export.m3u?${params}`);
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
     const blob = await response.blob(); const disposition = response.headers.get("content-disposition") || "";
     const match = disposition.match(/filename="([^"]+)"/);
-    const filename = match ? match[1] : `iptv-manager-optimized-v${playlist.latest_version_number}.m3u`;
+    const filename = match ? match[1] : `iptv-manager-${state.optimization}-v${playlist.latest_version_number}.m3u`;
     const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename;
     document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); $("status").textContent = `Exported ${filename}`;
   } catch (error) { $("status").innerHTML = `<span class="error">Export failed: ${escapeHtml(error.message)}</span>`; }
@@ -186,13 +324,24 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 }
 
-$("refresh").addEventListener("click", async () => { await loadPlaylists(); await loadChannels(); });
+$("refresh").addEventListener("click", async () => { await loadPlaylists(); await loadChannels(); await loadProfiles(); });
 $("playlist").addEventListener("change", async (event) => {
-  state.playlistId = Number(event.target.value) || null; state.selectedId = null;
-  $("empty").hidden = false; $("channel-detail").hidden = true; renderPlaylists(); await loadChannels();
+  state.playlistId = Number(event.target.value) || null; state.selectedId = null; state.profileId = null;
+  $("empty").hidden = false; $("channel-detail").hidden = true; renderPlaylists(); await loadChannels(); await loadProfiles();
 });
+$("profile").addEventListener("change", async (event) => {
+  state.profileId = Number(event.target.value) || null;
+  if (state.profileId == null) startNewProfile();
+  else {
+    const profile = await getJson(`/api/playlist-profiles/${state.profileId}`);
+    state.profileEntries = profile.entries.map((item) => ({ ...item }));
+    renderProfileEditor();
+  }
+});
+$("optimization").addEventListener("change", (event) => { state.optimization = event.target.value; });
+$("save-profile").addEventListener("click", saveProfile);
 $("test").addEventListener("click", () => startTest("quick"));
 $("deep-test").addEventListener("click", () => startTest("deep"));
 $("export").addEventListener("click", exportPlaylist);
 $("filter").addEventListener("input", renderChannels);
-Promise.all([loadPlaylists(), loadChannels()]);
+Promise.all([loadPlaylists(), loadChannels()]).then(loadProfiles);
