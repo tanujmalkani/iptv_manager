@@ -36,9 +36,10 @@ def list_channels_performance(
 def get_channel_performance_endpoint(
     channel_id: int,
     session: DbSession,
+    source_playlist_id: int | None = Query(default=None, gt=0),
 ) -> ChannelPerformanceResponse:
-    """Return all playable streams for a channel, ranked by historical performance."""
-    performance = get_channel_performance(session, channel_id)
+    """Return ranked playable streams, optionally scoped to a source playlist."""
+    performance = get_channel_performance(session, channel_id, source_playlist_id)
     if performance is None:
         raise HTTPException(status_code=404, detail="Channel not found")
     return ChannelPerformanceResponse.from_model(performance)
