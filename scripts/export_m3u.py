@@ -28,7 +28,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    optimization = None if args.optimization == "original" else OptimizationProfile(args.optimization)
+    optimization = (
+        None if args.optimization == "original" else OptimizationProfile(args.optimization)
+    )
     with SessionLocal() as session:
         result = export_m3u(
             session,
@@ -42,7 +44,9 @@ def main() -> None:
         raise SystemExit("No matching completed playlist/profile found.")
 
     profile_suffix = args.optimization
-    output_path = args.output or f"iptv-manager-{profile_suffix}-v{result.source_playlist_version_number}.m3u"
+    output_path = args.output or (
+        f"iptv-manager-{profile_suffix}-v{result.source_playlist_version_number}.m3u"
+    )
     with open(output_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(result.content)
 
