@@ -1,0 +1,61 @@
+.test-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.test-progress-stats .metric { padding: 10px; }
+.test-progress-stats .metric .value { font-size: 18px; }
+
+.testing-toolbar { box-shadow: 0 1px 1px rgba(16, 24, 40, 0.02); }
+.test-action-row button { min-width: 150px; }
+.test-recommendation { transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.test-recommendation:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(16, 24, 40, 0.06); }
+
+.export-controls { box-shadow: 0 1px 1px rgba(16, 24, 40, 0.02); }
+.export-control-grid label > span { color: #344054; }
+.export-validation-status { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.status-success { background: #ecfdf3; color: #027a48; }
+.status-warning { background: #fffaeb; color: #b54708; }
+.status-danger { background: #fef3f2; color: #b42318; }
+.export-metric { border-left: 3px solid #e4e7ec; }
+.export-metric.good { border-left-color: #12b76a; }
+.export-metric.warn { border-left-color: #f79009; }
+.warning-heading { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.export-preview-warnings li { padding: 3px 0; }
+
+.overview-metrics .metric,
+.test-progress-stats .metric { background: rgba(255,255,255,.6); }
+
+.channel-browser .panel-title { position: sticky; top: 0; z-index: 2; }
+.channel-browser .panel-title input { margin-top: 2px; }
+.channel { transition: background .12s ease, box-shadow .12s ease; }
+.channel.selected strong { font-weight: 750; }
+.channel-status-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px; background: #f2f4f7; color: #667085; font-size: 10px; font-weight: 700; }
+.status-pill.healthy { background: #ecfdf3; color: #027a48; }
+.status-pill.degraded { background: #fffaeb; color: #b54708; }
+.status-pill.failing { background: #fef3f2; color: #b42318; }
+.status-pill.stale { background: #f2f4f7; color: #475467; }
+.stream.primary { box-shadow: 0 3px 14px rgba(16, 24, 40, 0.05); }
+.stream-stale { border-color: #f79009; }
+
+@media (max-width: 760px) {
+  .test-progress-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .test-action-row button { min-width: 0; }
+}
+
+[data-theme="dark"] .export-control-grid label > span { color: #d0d5dd; }
+[data-theme="dark"] .status-success { background: #053b25; color: #6ce9a6; }
+[data-theme="dark"] .status-warning { background: #3b2a05; color: #fec84b; }
+[data-theme="dark"] .status-danger { background: #3b1513; color: #fda29b; }
+[data-theme="dark"] .export-metric.good { border-left-color: #32d583; }
+[data-theme="dark"] .export-metric.warn { border-left-color: #fdb022; }
+[data-theme="dark"] .overview-metrics .metric,
+[data-theme="dark"] .test-progress-stats .metric { background: #1d2530; }
+[data-theme="dark"] .status-pill { background: #2a3340; color: #98a2b3; }
+[data-theme="dark"] .status-pill.healthy { background: #053b25; color: #6ce9a6; }
+[data-theme="dark"] .status-pill.degraded { background: #3b2a05; color: #fec84b; }
+[data-theme="dark"] .status-pill.failing { background: #3b1513; color: #fda29b; }
+[data-theme="dark"] .status-pill.stale { background: #2a3340; color: #d0d5dd; }
