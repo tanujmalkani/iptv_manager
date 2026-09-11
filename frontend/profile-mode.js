@@ -49,6 +49,8 @@ async function saveProfileWithMode() {
   }
 }
 
+window.saveProfile = saveProfileWithMode;
+
 $("profile").addEventListener("change", applySavedProfileMode);
 $("save-profile").addEventListener("click", (event) => {
   event.stopImmediatePropagation();
@@ -56,7 +58,7 @@ $("save-profile").addEventListener("click", (event) => {
 }, true);
 
 const profileModeTimer = setInterval(() => {
-  if (state.profileId != null && state.profiles.length) {
+  if (state.profiles.length) {
     applySavedProfileMode();
     clearInterval(profileModeTimer);
   }
