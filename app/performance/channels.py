@@ -6,7 +6,16 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import Channel, ChannelStream, PlaylistEntry, SourcePlaylistVersion, StreamTest
+from app.db.models import (
+    Channel,
+    ChannelStream,
+    PlaylistEntry,
+    SourcePlaylistVersion,
+    Stream,
+    StreamTest,
+    StreamVariant,
+)
+from app.db.models.enums import StreamKind
 from app.performance.aggregation import StreamPerformance, aggregate_stream_tests
 from app.performance.ranking import rank_channel_streams
 
@@ -67,14 +76,22 @@ def rank_streams_for_channel(
     ]
 
 
-def get_channel_performance(session: Session, channel_id: int) -> ChannelPerformance | None:
-    """Return ranked playable streams and the recommended primary stream for a channel."""
+def get_channel_performance(
+    session: Session,
+    channel_id: int,
+    source_playlist_id: int | None = None,
+) -> ChannelPerformance | None:
+    """Return ranked playable streams, optionally scoped to a source playlist."""
     channel = session.scalar(
         select(Channel).options(selectinload(Channel.streams)).where(Channel.id == channel_id)
     )
     if channel is None:
         return None
-    return _build_channel_performance(session, channel)
+    if source_playlist_id is None:
+        return _build_channel_performance(session, channel)
+    stream_ids_by_channel = _load_playlist_stream_ids(session, source_playlist_id)
+    stream_ids = _stream_ids_for_channel(channel, stream_ids_by_channel)
+    return _build_channel_performance_from_tests(channel, _load_tests(session, stream_ids), stream_ids)
 
 
 def get_channels_performance(
@@ -147,6 +164,12 @@ def _load_playlist_stream_ids(
     session: Session,
     source_playlist_id: int,
 ) -> dict[int, set[int]]:
+    """Return playable streams reachable from entries in a source playlist.
+
+    PlaylistEntry stores the original/root stream URL. HLS discovery can add
+    playable child streams as ChannelStream + StreamVariant rows, so those
+    descendants must also be part of the playlist-scoped stream set.
+    """
     rows = session.execute(
         select(PlaylistEntry.channel_id, PlaylistEntry.stream_id)
         .join(
@@ -157,9 +180,50 @@ def _load_playlist_stream_ids(
         .distinct()
     ).all()
 
-    stream_ids_by_channel: dict[int, set[int]] = {}
+    roots_by_channel: dict[int, set[int]] = {}
+    root_stream_ids: set[int] = set()
     for channel_id, stream_id in rows:
-        stream_ids_by_channel.setdefault(channel_id, set()).add(stream_id)
+        roots_by_channel.setdefault(channel_id, set()).add(stream_id)
+        root_stream_ids.add(stream_id)
+
+    if not root_stream_ids:
+        return {}
+
+    variant_rows = session.execute(
+        select(StreamVariant.parent_stream_id, StreamVariant.variant_stream_id)
+    ).all()
+    children_by_parent: dict[int, set[int]] = {}
+    for parent_id, child_id in variant_rows:
+        children_by_parent.setdefault(parent_id, set()).add(child_id)
+
+    stream_rows = session.execute(
+        select(Stream.id, Stream.stream_kind)
+        .where(Stream.id.in_(
+            root_stream_ids
+            | {child_id for _, child_id in variant_rows}
+        ))
+    ).all()
+    kind_by_stream = {stream_id: kind for stream_id, kind in stream_rows}
+    playable_kinds = {
+        StreamKind.MEDIA_PLAYLIST.value,
+        StreamKind.MEDIA_STREAM.value,
+        StreamKind.UNKNOWN.value,
+    }
+
+    stream_ids_by_channel: dict[int, set[int]] = {}
+    for channel_id, roots in roots_by_channel.items():
+        included: set[int] = set()
+        pending = list(roots)
+        seen: set[int] = set()
+        while pending:
+            stream_id = pending.pop()
+            if stream_id in seen:
+                continue
+            seen.add(stream_id)
+            if kind_by_stream.get(stream_id) in playable_kinds:
+                included.add(stream_id)
+            pending.extend(children_by_parent.get(stream_id, ()))
+        stream_ids_by_channel[channel_id] = included
     return stream_ids_by_channel
 
 
