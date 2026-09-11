@@ -31,14 +31,12 @@
         </div>
         <button type="button" class="secondary-button" id="overview-go-channels">Inspect channels</button>
       </div>
-
       <div class="overview-metrics">
         <div class="metric"><div class="value">${number(channels.length)}</div><div class="label">Channels</div></div>
         <div class="metric"><div class="value">${number(streamCount)}</div><div class="label">Playable streams</div></div>
         <div class="metric"><div class="value">${number(testedCount)}</div><div class="label">Tested streams</div></div>
         <div class="metric"><div class="value">${successRate == null ? "—" : formatPercent(successRate)}</div><div class="label">Best-stream success</div></div>
       </div>
-
       <div class="overview-grid">
         <section class="panel overview-section">
           <div class="panel-title"><div><h3>Performance</h3><p class="meta">Current best observed channel-level measurements.</p></div></div>
@@ -49,7 +47,6 @@
             <div><span>Channels with primary</span><strong>${number(primaryCount)}</strong></div>
           </div>
         </section>
-
         <section class="panel overview-section">
           <div class="panel-title"><div><h3>Workflow</h3><p class="meta">Jump directly to the next useful step.</p></div></div>
           <div class="workflow-links">
@@ -71,5 +68,8 @@
     if (event.detail?.page === "overview") renderOverview();
   });
   window.addEventListener("iptv:datachange", renderOverview);
+  window.setInterval(() => {
+    if (document.querySelector('[data-page="overview"].active')) renderOverview();
+  }, 2000);
   window.setTimeout(renderOverview, 0);
 })();
