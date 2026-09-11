@@ -44,7 +44,7 @@ def export_optimized_m3u(
     channel_ids = {entry.channel_id for entry in entries}
     performances = {
         item.channel_id: item
-        for item in get_channels_performance(session, source_playlist_id=source_playlist_id)
+        for item in get_channels_performance(session)
         if item.channel_id in channel_ids
     }
 
