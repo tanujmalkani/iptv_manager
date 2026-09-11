@@ -21,7 +21,9 @@ def make_session() -> Session:
     return Session(engine)
 
 
-def make_playlist(session: Session) -> tuple[SourcePlaylist, SourcePlaylistVersion, Channel, Stream]:
+def make_playlist(
+    session: Session,
+) -> tuple[SourcePlaylist, SourcePlaylistVersion, Channel, Stream]:
     playlist = SourcePlaylist(name="Test", source_type="text", source_location="test")
     version = SourcePlaylistVersion(
         source_playlist=playlist,
