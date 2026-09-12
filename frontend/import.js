@@ -1,4 +1,58 @@
 (() => {
+  function setStatus(message, busy = false, error = false) {
+    const status = $("status");
+    if (!status) return;
+    status.dataset.busy = busy ? "true" : "false";
+    status.classList.toggle("status-error", error);
+    if (error) status.innerHTML = `<span class="error">${escapeHtml(message)}</span>`;
+    else status.textContent = message;
+  }
+
+  function setImportControlsDisabled(disabled) {
+    ["import-name", "import-source-location", "import-content", "import-file-button"].forEach((id) => {
+      const control = $(id);
+      if (control) control.disabled = disabled;
+    });
+  }
+
+  function renderImportProgress(job) {
+    const progress = $("import-progress");
+    if (!progress) return;
+    progress.hidden = false;
+
+    const total = job.total || 0;
+    const current = job.current || 0;
+    const percent = total ? Math.min(100, Math.round((current / total) * 100)) : 0;
+    const labels = {
+      queued: "Queued",
+      starting: "Starting",
+      parsing: "Parsing",
+      parsed: "Parsed",
+      discovering: "Discovering streams",
+      saving: "Saving",
+      complete: "Complete",
+      failed: "Failed",
+    };
+
+    $("import-progress-label").textContent = job.status === "completed"
+      ? "Playlist import complete"
+      : job.status === "failed" ? "Playlist import failed" : "Importing playlist";
+    $("import-progress-count").textContent = total ? `${current} / ${total}` : "";
+    $("import-progress-stage").textContent = labels[job.stage] || job.stage || "Working";
+    $("import-progress-stage").className = `badge ${job.status === "failed" ? "error-badge" : job.status === "completed" ? "" : "muted"}`;
+    $("import-progress-bar").style.width = `${percent}%`;
+    $("import-progress-message").textContent = job.message || "Working…";
+
+    const error = $("import-progress-error");
+    if (job.error) {
+      error.hidden = false;
+      error.innerHTML = `<div class="campaign-error-head"><strong>Import error</strong>${job.error_type ? `<span class="badge muted">${escapeHtml(job.error_type)}</span>` : ""}</div><pre class="campaign-error-message">${escapeHtml(job.error)}</pre>`;
+    } else {
+      error.hidden = true;
+      error.innerHTML = "";
+    }
+  }
+
   async function selectImportedPlaylist(result) {
     state.playlistId = result.source_playlist_id;
     state.selectedId = null;
@@ -10,7 +64,7 @@
     await loadProfiles();
     window.renderOverview?.();
     window.showPage?.("channels");
-    $("status").textContent = `Selected imported playlist · v${result.version_number}`;
+    setStatus(`Selected imported playlist · v${result.version_number}`);
   }
 
   function renderImportResult(result) {
@@ -32,7 +86,7 @@
       try {
         await selectImportedPlaylist(result);
       } catch (error) {
-        $("status").innerHTML = `<span class="error">Unable to load imported playlist: ${escapeHtml(error.message)}</span>`;
+        setStatus(`Unable to load imported playlist: ${error.message}`, false, true);
       }
     });
   }
@@ -83,6 +137,44 @@
     });
   }
 
+  async function pollImport(importId) {
+    state.polling = true;
+    setImportControlsDisabled(true);
+    try {
+      while (true) {
+        const job = await getJson(`/api/source-playlists/import/${encodeURIComponent(importId)}`);
+        renderImportProgress(job);
+        const playlistName = $("import-name").value.trim() || "playlist";
+        if (job.status === "running" || job.status === "pending") {
+          setStatus(job.message || `Importing ${playlistName}…`, true);
+        }
+        if (["completed", "failed"].includes(job.status)) {
+          state.polling = false;
+          setImportControlsDisabled(false);
+          if (job.status === "failed") {
+            const detail = job.error || "The playlist import ended unexpectedly.";
+            setStatus(`Import failed: ${job.error_type ? `${job.error_type}: ${detail}` : detail}`, false, true);
+            return;
+          }
+          const result = job.result;
+          if (!result) throw new Error("Import completed without a result.");
+          renderImportResult(result);
+          $("import-form").reset();
+          $("import-file").value = "";
+          $("import-file-name").textContent = "No file selected";
+          setStatus("Import complete · refreshing playlist data…", true);
+          await selectImportedPlaylist(result);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
+    } catch (error) {
+      state.polling = false;
+      setImportControlsDisabled(false);
+      setStatus(`Import status error: ${error.message}`, false, true);
+    }
+  }
+
   ensureFilePicker();
   bindFilePicker();
 
@@ -93,7 +185,7 @@
     const supported = /\.(m3u8?|txt)$/i.test(file.name);
     if (!supported) {
       $("import-file-name").textContent = "Unsupported file type";
-      $("status").textContent = "Please choose an .m3u, .m3u8, or .txt playlist file.";
+      setStatus("Please choose an .m3u, .m3u8, or .txt playlist file.");
       event.target.value = "";
       return;
     }
@@ -106,10 +198,10 @@
       if (!$("import-name").value.trim()) {
         $("import-name").value = file.name.replace(/\.(m3u8?|txt)$/i, "");
       }
-      $("status").textContent = `Loaded ${file.name} into the playlist editor.`;
+      setStatus(`Loaded ${file.name} into the playlist editor.`);
     } catch (error) {
       $("import-file-name").textContent = "Unable to read file";
-      $("status").textContent = `File load failed: ${escapeHtml(error.message)}`;
+      setStatus(`File load failed: ${error.message}`, false, true);
       event.target.value = "";
     }
   });
@@ -118,14 +210,18 @@
     event.preventDefault();
     const submit = $("import-submit");
     const result = $("import-result");
+    const progress = $("import-progress");
     const name = $("import-name").value.trim();
     const text = $("import-content").value;
     const sourceLocation = $("import-source-location").value.trim();
-    if (!name || !text.trim()) return;
+    if (!name || !text.trim() || state.polling) return;
 
     submit.disabled = true;
     result.hidden = true;
-    $("status").textContent = "Importing playlist and discovering streams…";
+    progress.hidden = false;
+    renderImportProgress({ status: "pending", stage: "queued", current: 0, total: 0, message: "Waiting to start" });
+    setStatus(`Starting import for ${name}…`, true);
+    setImportControlsDisabled(true);
     try {
       const response = await fetch("/api/source-playlists/import", {
         method: "POST",
@@ -133,19 +229,17 @@
         body: JSON.stringify({ name, text, source_location: sourceLocation || null }),
       });
       if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `${response.status} ${response.statusText}`);
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || `${response.status} ${response.statusText}`);
       }
-      const importResult = await response.json();
-      renderImportResult(importResult);
-      $("import-form").reset();
-      $("import-file").value = "";
-      $("import-file-name").textContent = "No file selected";
-      await selectImportedPlaylist(importResult);
+      const importJob = await response.json();
+      await pollImport(importJob.import_id);
     } catch (error) {
+      state.polling = false;
+      setImportControlsDisabled(false);
       result.hidden = false;
-      result.innerHTML = `<span class="error">Import failed: ${escapeHtml(error.message)}</span>`;
-      $("status").innerHTML = `<span class="error">Import failed: ${escapeHtml(error.message)}</span>`;
+      result.innerHTML = `<span class="error">Import failed to start: ${escapeHtml(error.message)}</span>`;
+      setStatus(`Import failed to start: ${error.message}`, false, true);
     } finally {
       submit.disabled = false;
     }
