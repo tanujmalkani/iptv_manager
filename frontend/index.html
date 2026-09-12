@@ -96,6 +96,18 @@ https://example.com/stream.m3u8"></textarea>
               <button id="import-submit" type="submit">Import playlist</button>
             </div>
           </form>
+          <section id="import-progress" class="progress import-progress" hidden>
+            <div class="progress-head">
+              <div>
+                <strong id="import-progress-label">Playlist import</strong>
+                <span id="import-progress-count" class="meta"></span>
+              </div>
+              <span id="import-progress-stage" class="badge muted">Queued</span>
+            </div>
+            <div class="progress-track"><div id="import-progress-bar" class="progress-bar"></div></div>
+            <div id="import-progress-message" class="meta import-progress-message">Waiting to start</div>
+            <div id="import-progress-error" class="campaign-error" hidden></div>
+          </section>
           <div id="import-result" class="import-result" hidden></div>
         </section>
         <section class="panel helper-panel">
