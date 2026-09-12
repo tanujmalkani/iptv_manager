@@ -95,6 +95,42 @@ function enhanceChannelStreamCards(channel) {
   });
 }
 
+function enhanceOptimizationCards() {
+  document.querySelectorAll("#optimization-channels .optimization-candidate").forEach((card) => {
+    if (card.dataset.collapsible === "true") return;
+    const summary = card.querySelector(".optimization-candidate-main");
+    if (!summary) return;
+    const body = document.createElement("div");
+    body.className = "optimization-candidate-body";
+    while (summary.nextSibling) body.appendChild(summary.nextSibling);
+    card.appendChild(body);
+    card.dataset.collapsible = "true";
+    card.classList.add("optimization-collapsed");
+    const chevron = document.createElement("span");
+    chevron.className = "optimization-chevron";
+    chevron.textContent = "▸";
+    summary.prepend(chevron);
+    summary.setAttribute("role", "button");
+    summary.setAttribute("tabindex", "0");
+    summary.setAttribute("aria-expanded", "false");
+    const toggle = () => {
+      const expanded = card.classList.toggle("is-expanded");
+      card.classList.toggle("optimization-collapsed", !expanded);
+      body.hidden = !expanded;
+      chevron.textContent = expanded ? "▾" : "▸";
+      summary.setAttribute("aria-expanded", String(expanded));
+    };
+    body.hidden = true;
+    summary.addEventListener("click", toggle);
+    summary.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
+  });
+}
+
 const originalRenderDetailWithStreamInfo = window.renderDetail;
 window.renderDetail = function renderDetailWithStreamInfo(channel) {
   originalRenderDetailWithStreamInfo(channel);
@@ -122,6 +158,7 @@ window.renderOptimizationPlan = function renderOptimizationPlanWithStreamInfo(pl
       card.querySelector(".optimization-components")?.insertAdjacentElement("beforebegin", panel);
     });
   });
+  enhanceOptimizationCards();
 };
 
 const originalRenderExportPreviewWithStreamInfo = window.renderExportPreview;
