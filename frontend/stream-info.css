@@ -1,0 +1,57 @@
+.stream-info-panels {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.stream-info-panel,
+.export-selection-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.8rem;
+  background: var(--panel-soft);
+}
+
+.stream-info-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.65rem;
+}
+
+.stream-info-grid,
+.stream-test-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.55rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.stream-info-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.optimization-stream-info {
+  margin: 0.7rem 0;
+}
+
+.export-selection-info {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.export-selection-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.export-selection-card .stream-head {
+  margin-bottom: 0.75rem;
+}
+
+.export-selection-card .stream-info-panel + .stream-info-panel {
+  margin-top: 0.65rem;
+}
