@@ -139,6 +139,7 @@
 
   async function pollImport(importId) {
     state.polling = true;
+    renderPlaylists();
     setImportControlsDisabled(true);
     try {
       while (true) {
@@ -151,6 +152,7 @@
         if (["completed", "failed"].includes(job.status)) {
           state.polling = false;
           setImportControlsDisabled(false);
+          renderPlaylists();
           if (job.status === "failed") {
             const detail = job.error || "The playlist import ended unexpectedly.";
             setStatus(`Import failed: ${job.error_type ? `${job.error_type}: ${detail}` : detail}`, false, true);
@@ -171,6 +173,7 @@
     } catch (error) {
       state.polling = false;
       setImportControlsDisabled(false);
+      renderPlaylists();
       setStatus(`Import status error: ${error.message}`, false, true);
     }
   }
@@ -221,6 +224,8 @@
     progress.hidden = false;
     renderImportProgress({ status: "pending", stage: "queued", current: 0, total: 0, message: "Waiting to start" });
     setStatus(`Starting import for ${name}…`, true);
+    state.polling = true;
+    renderPlaylists();
     setImportControlsDisabled(true);
     try {
       const response = await fetch("/api/source-playlists/import", {
@@ -237,6 +242,7 @@
     } catch (error) {
       state.polling = false;
       setImportControlsDisabled(false);
+      renderPlaylists();
       result.hidden = false;
       result.innerHTML = `<span class="error">Import failed to start: ${escapeHtml(error.message)}</span>`;
       setStatus(`Import failed to start: ${error.message}`, false, true);
