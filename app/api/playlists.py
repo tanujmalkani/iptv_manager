@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from app.api.schemas import SourcePlaylistResponse
 from app.db.models import SourcePlaylist, SourcePlaylistVersion
 from app.db.models.enums import VersionStatus
 from app.db.session import get_db
-from app.importer.service import PlaylistImporter
+from app.importer.job import get_import_job, serialize_import_job, start_import_job
 
 router = APIRouter(prefix="/api", tags=["playlists"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -49,24 +49,20 @@ def list_source_playlists(session: DbSession) -> list[SourcePlaylistResponse]:
 
 
 @router.post("/source-playlists/import")
-def import_playlist(payload: PlaylistImportRequest, session: DbSession) -> dict[str, object]:
-    """Import pasted M3U content through the web UI."""
-    result = PlaylistImporter().import_text(
-        session,
+def import_playlist(payload: PlaylistImportRequest) -> dict[str, object]:
+    """Start importing M3U content in the background and return a job id."""
+    job = start_import_job(
         name=payload.name.strip(),
         text=payload.text,
         source_location=payload.source_location.strip() if payload.source_location else None,
     )
-    return {
-        "source_playlist_id": result.source_playlist_id,
-        "version_id": result.version_id,
-        "version_number": result.version_number,
-        "entries": result.entries,
-        "channels": result.channels,
-        "unique_streams": result.unique_streams,
-        "duplicate_urls": result.duplicate_urls,
-        "new_channels": result.new_channels,
-        "discovered_streams": result.discovered_streams,
-        "warnings": result.warnings,
-        "identical_version": result.identical_version,
-    }
+    return {"import_id": job.id, "status": job.status}
+
+
+@router.get("/source-playlists/import/{import_id}")
+def get_import_status(import_id: str) -> dict[str, object]:
+    """Return current background playlist import progress and result."""
+    job = get_import_job(import_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return serialize_import_job(job)
