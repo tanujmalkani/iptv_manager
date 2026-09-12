@@ -7,7 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.schemas import OptimizationPlanResponse
-from app.db.models import Channel, SourcePlaylistVersion, Stream, StreamTest, StreamVariant
+from app.db.models import (
+    Channel,
+    ChannelStream,
+    SourcePlaylistVersion,
+    Stream,
+    StreamTest,
+    StreamVariant,
+)
 from app.db.models.enums import VersionStatus
 from app.db.session import get_db
 from app.optimization import (
@@ -45,7 +52,7 @@ def get_playlist_optimization(
     stream_ids_by_channel = load_playlist_stream_ids(session, version.id)
     channels = session.scalars(
         select(Channel)
-        .options(selectinload(Channel.streams).selectinload("stream"))
+        .options(selectinload(Channel.streams).selectinload(ChannelStream.stream))
         .where(Channel.id.in_(stream_ids_by_channel))
         .order_by(Channel.canonical_name, Channel.id)
     ).all()
