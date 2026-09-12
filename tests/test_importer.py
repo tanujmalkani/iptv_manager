@@ -137,3 +137,46 @@ def test_import_deduplicates_discovery_for_repeated_url() -> None:
     assert result.duplicate_urls == 1
     assert discovery.calls == ["https://example.test/live.m3u8"]
     assert len(session.scalars(select(Stream)).all()) == 1
+
+
+def test_import_reports_progress_stages_and_entry_counts() -> None:
+    session = make_session()
+    playlist = (
+        "#EXTM3U\n"
+        "#EXTINF:-1,Channel One\nhttps://example.test/live-one.m3u8\n"
+        "#EXTINF:-1,Channel Two\nhttps://example.test/live-two.m3u8\n"
+    )
+    events: list[tuple[str, int, int, str]] = []
+
+    class PerUrlDiscovery(CountingDiscovery):
+        def discover(self, url: str) -> list[DiscoveryResult]:
+            self.calls.append(url)
+            return [
+                DiscoveryResult(
+                    url=url,
+                    final_url=url,
+                    kind=StreamKind.MEDIA_PLAYLIST,
+                    content_type="application/vnd.apple.mpegurl",
+                    http_status=200,
+                    parent_url=None,
+                    depth=0,
+                )
+            ]
+
+    result = PlaylistImporter(discovery=PerUrlDiscovery()).import_text(
+        session,
+        "Progress Playlist",
+        playlist,
+        progress=lambda stage, current, total, message: events.append(
+            (stage, current, total, message)
+        ),
+    )
+
+    stages = [event[0] for event in events]
+    assert stages[0] == "parsing"
+    assert "parsed" in stages
+    assert "discovering" in stages
+    assert "saving" in stages
+    assert stages[-1] == "complete"
+    assert events[-1][1:3] == (2, 2)
+    assert result.entries == 2
