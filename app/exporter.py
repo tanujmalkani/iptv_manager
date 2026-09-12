@@ -12,6 +12,7 @@ from app.db.models import (
     SourcePlaylistVersion,
     Stream,
     StreamTest,
+    StreamVariant,
 )
 from app.db.models.enums import VersionStatus
 from app.optimization import (
@@ -19,6 +20,8 @@ from app.optimization import (
     build_optimization_plan,
     load_playlist_stream_ids,
 )
+from app.performance.aggregation import StreamPerformance, aggregate_stream_tests
+from app.performance.stream_info import StreamTechnicalInfo, build_stream_technical_info
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +34,16 @@ class ExportResult:
     fallback_count: int
     playlist_profile_id: int | None = None
     optimization_profile: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExportSelection:
+    channel_id: int
+    channel_name: str
+    stream_info: StreamTechnicalInfo
+    performance: StreamPerformance
+    optimized: bool
+    fallback: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +61,7 @@ class ExportPreview:
     no_successful_test_count: int
     invalid_selection_count: int
     warnings: tuple[str, ...]
+    selections: tuple[ExportSelection, ...]
     playlist_profile_id: int | None = None
     optimization_profile: str | None = None
 
@@ -157,7 +171,9 @@ def preview_m3u(
         )
 
     profile_entries = {entry.channel_id: entry for entry in profile.entries} if profile else {}
-    test_stats = _stream_test_stats(session, all_candidate_stream_ids)
+    candidate_stream_ids = all_candidate_stream_ids | {entry.stream_id for entry in selected_entries}
+    tests_by_stream = _load_tests(session, candidate_stream_ids)
+    stream_info_by_id = _load_stream_info(session, candidate_stream_ids, tests_by_stream)
     optimized_count = 0
     manual_count = 0
     automatic_count = 0
@@ -166,6 +182,7 @@ def preview_m3u(
     no_successful_test_count = 0
     invalid_selection_count = 0
     warnings: list[str] = []
+    selections: list[ExportSelection] = []
 
     for entry in selected_entries:
         profile_entry = profile_entries.get(entry.channel_id)
@@ -202,11 +219,42 @@ def preview_m3u(
         if chosen_stream_id != entry.stream_id:
             optimized_count += 1
 
-        stats = test_stats.get(chosen_stream_id, (0, 0))
+        stats = _stream_test_stats_from_tests(tests_by_stream.get(chosen_stream_id, ()))
         if stats[0] == 0:
             untested_count += 1
         if stats[1] == 0:
             no_successful_test_count += 1
+
+        stream = stream_info_by_id.get(chosen_stream_id)
+        if stream is None:
+            stream = stream_info_by_id.get(entry.stream_id)
+        performance = aggregate_stream_tests(
+            chosen_stream_id,
+            tests_by_stream.get(chosen_stream_id, ()),
+        )
+        selections.append(
+            ExportSelection(
+                channel_id=entry.channel_id,
+                channel_name=entry.channel.canonical_name,
+                stream_info=stream
+                or StreamTechnicalInfo(
+                    stream_id=chosen_stream_id,
+                    stream_kind="unknown",
+                    protocol=None,
+                    resolution=None,
+                    bitrate_bps=None,
+                    average_bitrate_bps=None,
+                    frame_rate=None,
+                    codecs=None,
+                    observed_fps=None,
+                    observed_codec=None,
+                    audio_present=None,
+                ),
+                performance=performance,
+                optimized=chosen_stream_id != entry.stream_id,
+                fallback=used_fallback,
+            )
+        )
 
     if untested_count:
         warnings.append(f"{untested_count} exported channel(s) use a stream with no test history")
@@ -234,6 +282,7 @@ def preview_m3u(
         no_successful_test_count=no_successful_test_count,
         invalid_selection_count=invalid_selection_count,
         warnings=tuple(dict.fromkeys(warnings)),
+        selections=tuple(selections),
         playlist_profile_id=playlist_profile_id,
         optimization_profile=optimization_profile.value if optimization_profile else None,
     )
@@ -373,15 +422,62 @@ def _build_optimization(
     return {item.channel_id: item for item in plan.channels}
 
 
-def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tuple[int, int]]:
+def _load_tests(session: Session, stream_ids: set[int]) -> dict[int, list[StreamTest]]:
+    tests_by_stream: dict[int, list[StreamTest]] = {stream_id: [] for stream_id in stream_ids}
+    if not stream_ids:
+        return tests_by_stream
+    tests = session.scalars(
+        select(StreamTest)
+        .where(StreamTest.stream_id.in_(stream_ids))
+        .order_by(StreamTest.stream_id, StreamTest.completed_at, StreamTest.id)
+    ).all()
+    for test in tests:
+        tests_by_stream.setdefault(test.stream_id, []).append(test)
+    return tests_by_stream
+
+
+def _load_stream_info(
+    session: Session,
+    stream_ids: set[int],
+    tests_by_stream: dict[int, list[StreamTest]],
+) -> dict[int, StreamTechnicalInfo]:
     if not stream_ids:
         return {}
-    tests = session.scalars(select(StreamTest).where(StreamTest.stream_id.in_(stream_ids))).all()
-    stats: dict[int, tuple[int, int]] = {}
-    for test in tests:
-        total, successful = stats.get(test.stream_id, (0, 0))
-        stats[test.stream_id] = (total + 1, successful + int(test.result == "success"))
-    return stats
+    streams = session.scalars(select(Stream).where(Stream.id.in_(stream_ids))).all()
+    variants = session.scalars(
+        select(StreamVariant).where(
+            (StreamVariant.parent_stream_id.in_(stream_ids))
+            | (StreamVariant.variant_stream_id.in_(stream_ids))
+        )
+    ).all()
+    variants_by_stream: dict[int, list[StreamVariant]] = {stream_id: [] for stream_id in stream_ids}
+    for variant in variants:
+        if variant.parent_stream_id in variants_by_stream:
+            variants_by_stream[variant.parent_stream_id].append(variant)
+        if variant.variant_stream_id in variants_by_stream:
+            variants_by_stream[variant.variant_stream_id].append(variant)
+    return {
+        stream.id: build_stream_technical_info(
+            stream,
+            tests_by_stream.get(stream.id, ()),
+            variants_by_stream.get(stream.id, ()),
+        )
+        for stream in streams
+    }
+
+
+def _stream_test_stats_from_tests(tests) -> tuple[int, int]:
+    total = len(tests)
+    successful = sum(1 for test in tests if test.result == "success")
+    return total, successful
+
+
+def _stream_test_stats(session: Session, stream_ids: set[int]) -> dict[int, tuple[int, int]]:
+    tests_by_stream = _load_tests(session, stream_ids)
+    return {
+        stream_id: _stream_test_stats_from_tests(tests)
+        for stream_id, tests in tests_by_stream.items()
+    }
 
 
 def _stream_belongs_to_channel(
