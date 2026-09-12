@@ -50,9 +50,13 @@ def build_stream_technical_info(
     )
     variant = ranked_variants[0] if ranked_variants else None
 
-    if resolution is None and variant is not None:
-        if variant.resolution_width and variant.resolution_height:
-            resolution = f"{variant.resolution_width}x{variant.resolution_height}"
+    if (
+        resolution is None
+        and variant is not None
+        and variant.resolution_width
+        and variant.resolution_height
+    ):
+        resolution = f"{variant.resolution_width}x{variant.resolution_height}"
     return StreamTechnicalInfo(
         stream_id=stream.id,
         stream_kind=stream.stream_kind,
