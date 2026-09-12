@@ -10,6 +10,7 @@ from app.api.schemas import OptimizationPlanResponse
 from app.db.models import (
     Channel,
     ChannelStream,
+    PlaylistEntry,
     SourcePlaylistVersion,
     Stream,
     StreamTest,
@@ -56,6 +57,21 @@ def get_playlist_optimization(
         .where(Channel.id.in_(stream_ids_by_channel))
         .order_by(Channel.canonical_name, Channel.id)
     ).all()
+    ordered_channel_ids = session.scalars(
+        select(PlaylistEntry.channel_id)
+        .where(PlaylistEntry.source_playlist_version_id == version.id)
+        .order_by(PlaylistEntry.original_position, PlaylistEntry.id)
+    ).all()
+    order_by_channel: dict[int, int] = {}
+    for position, channel_id in enumerate(ordered_channel_ids):
+        order_by_channel.setdefault(channel_id, position)
+    channels.sort(
+        key=lambda channel: (
+            order_by_channel.get(channel.id, len(order_by_channel)),
+            channel.canonical_name,
+            channel.id,
+        )
+    )
 
     stream_ids = {stream_id for ids in stream_ids_by_channel.values() for stream_id in ids}
     streams = (
