@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.schemas import OptimizationPlanResponse
-from app.db.models import Channel, SourcePlaylistVersion, Stream, StreamTest
+from app.db.models import Channel, SourcePlaylistVersion, Stream, StreamTest, StreamVariant
 from app.db.models.enums import VersionStatus
 from app.db.session import get_db
 from app.optimization import (
@@ -15,6 +15,7 @@ from app.optimization import (
     build_optimization_plan,
     load_playlist_stream_ids,
 )
+from app.performance.stream_info import build_stream_technical_info
 
 router = APIRouter(prefix="/api", tags=["optimization"])
 DbSession = Annotated[Session, Depends(get_db)]
@@ -44,7 +45,7 @@ def get_playlist_optimization(
     stream_ids_by_channel = load_playlist_stream_ids(session, version.id)
     channels = session.scalars(
         select(Channel)
-        .options(selectinload(Channel.streams))
+        .options(selectinload(Channel.streams).selectinload("stream"))
         .where(Channel.id.in_(stream_ids_by_channel))
         .order_by(Channel.canonical_name, Channel.id)
     ).all()
@@ -74,10 +75,39 @@ def get_playlist_optimization(
         for test in tests:
             tests_by_stream.setdefault(test.stream_id, []).append(test)
 
+    variants = (
+        session.scalars(
+            select(StreamVariant).where(
+                (StreamVariant.parent_stream_id.in_(stream_ids))
+                | (StreamVariant.variant_stream_id.in_(stream_ids))
+            )
+        ).all()
+        if stream_ids
+        else []
+    )
+    variants_by_stream: dict[int, list[StreamVariant]] = {stream_id: [] for stream_id in stream_ids}
+    for variant in variants:
+        if variant.parent_stream_id in variants_by_stream:
+            variants_by_stream[variant.parent_stream_id].append(variant)
+        if variant.variant_stream_id in variants_by_stream:
+            variants_by_stream[variant.variant_stream_id].append(variant)
+    stream_info_by_id = {
+        stream.id: build_stream_technical_info(
+            stream,
+            tests_by_stream.get(stream.id, ()),
+            variants_by_stream.get(stream.id, ()),
+        )
+        for stream in streams
+    }
+
     plan = build_optimization_plan(
         channels,
         tests_by_stream,
         stream_ids_by_channel,
         profile,
     )
-    return OptimizationPlanResponse.from_model(plan, version.version_number)
+    return OptimizationPlanResponse.from_model(
+        plan,
+        version.version_number,
+        stream_info_by_id,
+    )
