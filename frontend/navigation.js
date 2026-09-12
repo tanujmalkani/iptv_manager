@@ -35,6 +35,7 @@
   function applyTheme(theme) {
     const nextTheme = theme === "dark" ? "dark" : "light";
     document.documentElement.dataset.theme = nextTheme;
+    document.body.classList.toggle("dark", nextTheme === "dark");
     const toggle = document.getElementById("theme-toggle");
     if (toggle) {
       toggle.textContent = nextTheme === "dark" ? "☀" : "☾";
@@ -62,6 +63,8 @@
   window.addEventListener("hashchange", () => showPage(window.location.hash.slice(1), false));
   window.showPage = showPage;
 
+  const status = document.getElementById("status");
+  if (status) status.textContent = "";
   applyTheme(initialTheme());
   showPage(initialPage(), false);
 })();
