@@ -14,6 +14,25 @@ from app.optimization import (
 )
 from app.performance.aggregation import StreamPerformance
 from app.performance.channels import ChannelPerformance, ChannelStreamRanking
+from app.performance.stream_info import StreamTechnicalInfo
+
+
+class StreamTechnicalInfoResponse(BaseModel):
+    stream_id: int
+    stream_kind: str
+    protocol: str | None
+    resolution: str | None
+    bitrate_bps: int | None
+    average_bitrate_bps: int | None
+    frame_rate: float | None
+    codecs: str | None
+    observed_fps: float | None
+    observed_codec: str | None
+    audio_present: bool | None
+
+    @classmethod
+    def from_model(cls, info: StreamTechnicalInfo) -> StreamTechnicalInfoResponse:
+        return cls.model_validate(info)
 
 
 class StreamPerformanceResponse(BaseModel):
@@ -45,6 +64,7 @@ class ChannelStreamResponse(BaseModel):
     rank: int
     score: float
     is_primary: bool
+    stream_info: StreamTechnicalInfoResponse
     performance: StreamPerformanceResponse
 
     @classmethod
@@ -54,6 +74,7 @@ class ChannelStreamResponse(BaseModel):
             rank=ranking.rank,
             score=ranking.score,
             is_primary=ranking.is_primary,
+            stream_info=StreamTechnicalInfoResponse.from_model(ranking.stream_info),
             performance=StreamPerformanceResponse.from_model(ranking.performance),
         )
 
@@ -204,9 +225,14 @@ class OptimizationCandidateResponse(BaseModel):
     median_first_frame_ms: float | None
     p95_first_frame_ms: float | None
     stability_rate: float
+    stream_info: StreamTechnicalInfoResponse
 
     @classmethod
-    def from_model(cls, item) -> OptimizationCandidateResponse:
+    def from_model(
+        cls,
+        item,
+        stream_info: StreamTechnicalInfo,
+    ) -> OptimizationCandidateResponse:
         performance = item.performance
         return cls(
             stream_id=performance.stream_id,
@@ -222,6 +248,7 @@ class OptimizationCandidateResponse(BaseModel):
             median_first_frame_ms=performance.median_first_frame_ms,
             p95_first_frame_ms=performance.p95_first_frame_ms,
             stability_rate=performance.stability_rate,
+            stream_info=StreamTechnicalInfoResponse.from_model(stream_info),
         )
 
 
@@ -241,9 +268,16 @@ class OptimizationChannelResponse(BaseModel):
     candidates: list[OptimizationCandidateResponse]
 
     @classmethod
-    def from_model(cls, item: OptimizedChannel) -> OptimizationChannelResponse:
+    def from_model(
+        cls,
+        item: OptimizedChannel,
+        stream_info_by_id: dict[int, StreamTechnicalInfo],
+    ) -> OptimizationChannelResponse:
         candidates = [
-            OptimizationCandidateResponse.from_model(candidate)
+            OptimizationCandidateResponse.from_model(
+                candidate,
+                stream_info_by_id[candidate.stream_id],
+            )
             for candidate in item.candidates
         ]
         return cls(
@@ -265,6 +299,7 @@ class OptimizationPlanResponse(BaseModel):
         cls,
         plan: OptimizationPlan,
         version_number: int,
+        stream_info_by_id: dict[int, StreamTechnicalInfo],
     ) -> OptimizationPlanResponse:
         policy = POLICIES[plan.profile]
         return cls(
@@ -278,8 +313,20 @@ class OptimizationPlanResponse(BaseModel):
                 evidence_weight=policy.evidence_weight,
                 minimum_success_rate=policy.minimum_success_rate,
             ),
-            channels=[OptimizationChannelResponse.from_model(item) for item in plan.channels],
+            channels=[
+                OptimizationChannelResponse.from_model(item, stream_info_by_id)
+                for item in plan.channels
+            ],
         )
+
+
+class ExportSelectionResponse(BaseModel):
+    channel_id: int
+    channel_name: str
+    stream_info: StreamTechnicalInfoResponse
+    performance: StreamPerformanceResponse
+    optimized: bool
+    fallback: bool
 
 
 class ExportPreviewResponse(BaseModel):
@@ -298,6 +345,7 @@ class ExportPreviewResponse(BaseModel):
     warnings: list[str]
     playlist_profile_id: int | None
     optimization_profile: str | None
+    selections: list[ExportSelectionResponse]
 
     @classmethod
     def from_model(cls, preview) -> ExportPreviewResponse:
@@ -317,4 +365,15 @@ class ExportPreviewResponse(BaseModel):
             warnings=list(preview.warnings),
             playlist_profile_id=preview.playlist_profile_id,
             optimization_profile=preview.optimization_profile,
+            selections=[
+                ExportSelectionResponse(
+                    channel_id=selection.channel_id,
+                    channel_name=selection.channel_name,
+                    stream_info=StreamTechnicalInfoResponse.from_model(selection.stream_info),
+                    performance=StreamPerformanceResponse.from_model(selection.performance),
+                    optimized=selection.optimized,
+                    fallback=selection.fallback,
+                )
+                for selection in preview.selections
+            ],
         )
