@@ -48,22 +48,50 @@ function enhanceChannelStreamCards(channel) {
   document.querySelectorAll("#channel-detail .stream").forEach((card, index) => {
     const item = channel.streams[index];
     if (!item) return;
-    const scoreBar = card.querySelector(".score-bar");
-    card.querySelector(".stream-grid")?.remove();
-    card.querySelector(".stream-foot")?.remove();
-    const body = document.createElement("div");
-    body.className = "stream-info-panels";
-    body.innerHTML = `
-      <section class="stream-info-panel">
-        <div class="stream-info-title"><strong>Stream information</strong><span class="meta">${escapeHtml(item.stream_info.protocol || "Unknown protocol")}</span></div>
-        ${streamTechnicalMarkup(item.stream_info)}
-      </section>
-      <section class="stream-info-panel stream-test-panel">
-        <div class="stream-info-title"><strong>Test data</strong><span class="meta">${item.performance.total_tests ? "Historical observations" : "No test history"}</span></div>
-        ${streamTestMarkup(item.performance)}
-      </section>
-      <div class="stream-foot meta">${item.performance.total_tests ? `${item.performance.successful_tests} successful · ${item.performance.stable_tests} stable runs` : "No historical test observations yet"}</div>`;
-    scoreBar?.insertAdjacentElement("afterend", body);
+    const details = document.createElement("div");
+    details.className = "stream-details";
+    details.hidden = true;
+    details.innerHTML = `
+      <div class="score-bar"><div style="width: ${Math.min(100, Math.max(0, item.score))}%"></div></div>
+      <div class="stream-info-panels">
+        <section class="stream-info-panel">
+          <div class="stream-info-title"><strong>Stream information</strong><span class="meta">${escapeHtml(item.stream_info.protocol || "Unknown protocol")}</span></div>
+          ${streamTechnicalMarkup(item.stream_info)}
+        </section>
+        <section class="stream-info-panel stream-test-panel">
+          <div class="stream-info-title"><strong>Test data</strong><span class="meta">${item.performance.total_tests ? "Historical observations" : "No test history"}</span></div>
+          ${streamTestMarkup(item.performance)}
+        </section>
+        <div class="stream-foot meta">${item.performance.total_tests ? `${item.performance.successful_tests} successful · ${item.performance.stable_tests} stable runs` : "No historical test observations yet"}</div>
+      </div>`;
+
+    const protocol = item.stream_info?.protocol ? ` · ${item.stream_info.protocol}` : "";
+    const summary = document.createElement("button");
+    summary.type = "button";
+    summary.className = "stream-summary-toggle";
+    summary.setAttribute("aria-expanded", "false");
+    summary.innerHTML = `
+      <span class="stream-summary-main">
+        <strong>#${item.rank} · Stream ${item.stream_id}</strong>
+        ${item.is_primary ? '<span class="badge">Primary</span>' : ""}
+      </span>
+      <span class="stream-summary-metrics">
+        <span>${escapeHtml(item.stream_info?.resolution || "Unknown res")}</span>
+        <span>${formatMs(item.performance.median_first_frame_ms)}</span>
+        <span>${formatPercent(item.performance.success_rate)} success</span>
+        <span>${item.score.toFixed(1)} score</span>
+        <span class="stream-summary-protocol">${escapeHtml(protocol)}</span>
+      </span>
+      <span class="stream-summary-chevron" aria-hidden="true">⌄</span>`;
+
+    card.replaceChildren(summary, details);
+    card.classList.add("stream-collapsible");
+    summary.addEventListener("click", () => {
+      const expanded = !details.hidden;
+      details.hidden = expanded;
+      summary.setAttribute("aria-expanded", String(!expanded));
+      card.classList.toggle("expanded", !expanded);
+    });
   });
 }
 
