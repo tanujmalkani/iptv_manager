@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
+from typing import Callable
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
@@ -23,6 +24,9 @@ from app.discovery.models import DiscoveryResult, VariantMetadata
 from app.discovery.service import StreamDiscovery
 from app.discovery.url import normalize_url
 from app.m3u.parser import M3UEntry, parse_m3u
+
+
+ImportProgress = Callable[[str, int, int, str], None]
 
 
 @dataclass(slots=True)
@@ -53,9 +57,18 @@ class PlaylistImporter:
         text: str,
         source_location: str | None = None,
         source_type: SourceType | None = None,
+        progress: ImportProgress | None = None,
     ) -> ImportResult:
+        self._report(progress, "parsing", 0, 0, "Parsing M3U content")
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         playlist = parse_m3u(text)
+        self._report(
+            progress,
+            "parsed",
+            0,
+            len(playlist.entries),
+            f"Parsed {len(playlist.entries)} playlist entries",
+        )
         source = self._get_or_create_source(
             session,
             name,
@@ -70,6 +83,7 @@ class PlaylistImporter:
             )
         )
         if existing is not None:
+            self._report(progress, "complete", len(playlist.entries), len(playlist.entries), "Existing version detected")
             return ImportResult(
                 source_playlist_id=source.id,
                 version_id=existing.id,
@@ -104,7 +118,16 @@ class PlaylistImporter:
         try:
             seen_entry_urls: set[str] = set()
             discovery_cache: dict[str, list[DiscoveryResult]] = {}
-            for entry in playlist.entries:
+            total = len(playlist.entries)
+            for index, entry in enumerate(playlist.entries, start=1):
+                channel_name = entry.name or entry.attributes.get("tvg-name") or entry.url
+                self._report(
+                    progress,
+                    "discovering",
+                    index - 1,
+                    total,
+                    f"Discovering streams for {channel_name}",
+                )
                 normalized_entry_url = normalize_url(entry.url)
                 if normalized_entry_url in seen_entry_urls:
                     result.duplicate_urls += 1
@@ -117,7 +140,15 @@ class PlaylistImporter:
                     result,
                     discovery_cache,
                 )
+                self._report(
+                    progress,
+                    "discovering",
+                    index,
+                    total,
+                    f"Processed {channel_name}",
+                )
 
+            self._report(progress, "saving", total, total, "Saving imported playlist version")
             version.status = VersionStatus.COMPLETED.value
             source.entry_count = len(playlist.entries)
             session.commit()
@@ -127,7 +158,25 @@ class PlaylistImporter:
 
         result.channels = self._count_channels(session, version.id)
         result.unique_streams = self._count_streams(session, version.id)
+        self._report(
+            progress,
+            "complete",
+            result.entries,
+            result.entries,
+            f"Import complete · {result.channels} channels · {result.unique_streams} source streams",
+        )
         return result
+
+    @staticmethod
+    def _report(
+        progress: ImportProgress | None,
+        stage: str,
+        current: int,
+        total: int,
+        message: str,
+    ) -> None:
+        if progress is not None:
+            progress(stage, current, total, message)
 
     def _get_or_create_source(
         self,
@@ -375,7 +424,7 @@ class PlaylistImporter:
             )
             or 0
         )
-        
+
 
 def normalize_channel_name(value: str) -> str:
     """Normalize names for exact matching without stripping quality markers."""
