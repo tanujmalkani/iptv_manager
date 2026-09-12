@@ -1,4 +1,18 @@
 (() => {
+  async function selectImportedPlaylist(result) {
+    state.playlistId = result.source_playlist_id;
+    state.selectedId = null;
+    state.profileId = null;
+    await loadPlaylists();
+    state.playlistId = result.source_playlist_id;
+    renderPlaylists();
+    await loadChannels();
+    await loadProfiles();
+    window.renderOverview?.();
+    window.showPage?.("channels");
+    $("status").textContent = `Selected imported playlist · v${result.version_number}`;
+  }
+
   function renderImportResult(result) {
     const target = $("import-result");
     target.hidden = false;
@@ -15,16 +29,16 @@
       </div>
       ${result.warnings?.length ? `<div class="import-warnings"><strong>Warnings</strong><ul>${result.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></div>` : ""}`;
     $("open-imported-playlist").addEventListener("click", async () => {
-      window.dispatchEvent(new CustomEvent("iptv:datachange", {
-        detail: { source_playlist_id: result.source_playlist_id },
-      }));
-      window.showPage?.("channels");
-      $("status").textContent = `Selected imported playlist · v${result.version_number}`;
+      try {
+        await selectImportedPlaylist(result);
+      } catch (error) {
+        $("status").innerHTML = `<span class="error">Unable to load imported playlist: ${escapeHtml(error.message)}</span>`;
+      }
     });
   }
 
   function ensureFilePicker() {
-    if ($("import-file-button") || !$("import-content")) return;
+    if ($("import-file") || !$("import-content")) return;
     const contentLabel = $("import-content").closest("label");
     if (!contentLabel) return;
 
@@ -46,14 +60,17 @@
     fileInput.id = "import-file";
     fileInput.type = "file";
     fileInput.accept = ".m3u,.m3u8,.txt";
-    fileInput.hidden = true;
+    fileInput.style.position = "absolute";
+    fileInput.style.width = "1px";
+    fileInput.style.height = "1px";
+    fileInput.style.opacity = "0";
+    fileInput.style.pointerEvents = "none";
 
-    const button = document.createElement("button");
-    button.id = "import-file-button";
-    button.type = "button";
+    const button = document.createElement("label");
     button.className = "secondary-button";
+    button.htmlFor = "import-file";
     button.textContent = "Choose M3U file";
-    button.addEventListener("click", () => fileInput.click());
+    button.style.cursor = "pointer";
 
     actions.append(fileName, button, fileInput);
     picker.append(description, actions);
@@ -117,9 +134,7 @@
       $("import-form").reset();
       $("import-file").value = "";
       $("import-file-name").textContent = "No file selected";
-      window.dispatchEvent(new CustomEvent("iptv:datachange", {
-        detail: { source_playlist_id: importResult.source_playlist_id },
-      }));
+      await selectImportedPlaylist(importResult);
     } catch (error) {
       result.hidden = false;
       result.innerHTML = `<span class="error">Import failed: ${escapeHtml(error.message)}</span>`;
