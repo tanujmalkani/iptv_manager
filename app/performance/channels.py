@@ -15,7 +15,7 @@ from app.db.models import (
     StreamTest,
     StreamVariant,
 )
-from app.db.models.enums import StreamKind
+from app.db.models.enums import StreamKind, VersionStatus
 from app.performance.aggregation import StreamPerformance, aggregate_stream_tests
 from app.performance.ranking import rank_channel_streams
 from app.performance.stream_info import StreamTechnicalInfo, build_stream_technical_info
@@ -150,6 +150,7 @@ def get_channels_performance(
         stream_ids_by_channel = None
     else:
         stream_ids_by_channel = _load_playlist_stream_ids(session, source_playlist_id)
+        channels = _order_channels_by_playlist(session, source_playlist_id, channels)
 
     stream_ids = {
         stream_id
@@ -168,6 +169,42 @@ def get_channels_performance(
         )
         for channel in channels
     ]
+
+
+def _order_channels_by_playlist(
+    session: Session,
+    source_playlist_id: int,
+    channels: list[Channel],
+) -> list[Channel]:
+    """Order channel summaries by their first occurrence in the latest playlist version."""
+    version = session.scalar(
+        select(SourcePlaylistVersion)
+        .where(
+            SourcePlaylistVersion.source_playlist_id == source_playlist_id,
+            SourcePlaylistVersion.status == VersionStatus.COMPLETED.value,
+        )
+        .order_by(SourcePlaylistVersion.version_number.desc())
+    )
+    if version is None:
+        return channels
+
+    ordered_channel_ids = session.scalars(
+        select(PlaylistEntry.channel_id)
+        .where(PlaylistEntry.source_playlist_version_id == version.id)
+        .order_by(PlaylistEntry.original_position, PlaylistEntry.id)
+    ).all()
+    order_by_channel = {}
+    for position, channel_id in enumerate(ordered_channel_ids):
+        order_by_channel.setdefault(channel_id, position)
+
+    return sorted(
+        channels,
+        key=lambda channel: (
+            order_by_channel.get(channel.id, len(order_by_channel)),
+            channel.canonical_name,
+            channel.id,
+        ),
+    )
 
 
 def _build_channel_performance(session: Session, channel: Channel) -> ChannelPerformance:
