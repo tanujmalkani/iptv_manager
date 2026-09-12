@@ -59,7 +59,9 @@ def _resolution_scores(
         return {performance.stream_id: 0.0 for performance in performances}
 
     pixels_by_stream = {
-        performance.stream_id: _resolution_pixels(resolution_by_stream.get(performance.stream_id))
+        performance.stream_id: _resolution_pixels(
+            resolution_by_stream.get(performance.stream_id)
+        )
         for performance in performances
     }
     known_pixels = [pixels for pixels in pixels_by_stream.values() if pixels is not None]
