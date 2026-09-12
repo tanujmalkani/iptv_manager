@@ -130,7 +130,8 @@ def test_optimization_preview_returns_profile_scoring_and_primary() -> None:
         body = response.json()
         assert body["profile"] == "fast"
         assert body["version_number"] == 1
-        assert body["policy"]["speed_weight"] == 0.5
+        assert body["policy"]["speed_weight"] == 0.4
+        assert body["policy"]["resolution_weight"] == 0.1
         assert body["channels"][0]["channel_name"] == "News"
         assert body["channels"][0]["primary_stream_id"] == fast.id
         assert body["channels"][0]["candidates"][0]["stream_id"] == fast.id
