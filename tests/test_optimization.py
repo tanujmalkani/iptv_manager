@@ -51,6 +51,24 @@ def test_fast_profile_prefers_low_startup_for_eligible_streams() -> None:
     assert [item.performance.stream_id for item in result.candidates] == [10, 20]
 
 
+def test_fast_profile_uses_resolution_to_offset_small_speed_improvement() -> None:
+    tests = {
+        10: [_test(10, available=True, first_frame_ms=100, minute=index) for index in range(4)],
+        20: [_test(20, available=True, first_frame_ms=110, minute=index + 4) for index in range(4)],
+    }
+
+    result = build_channel_optimization(
+        _channel(),
+        tests,
+        profile=OptimizationProfile.FAST,
+        resolution_by_stream={10: "1280x720", 20: "1920x1080"},
+    )
+
+    assert result.primary_stream_id == 20
+    assert result.candidates[0].resolution_score == 100.0
+    assert result.candidates[1].resolution_score < result.candidates[0].resolution_score
+
+
 def test_reliable_profile_excludes_flaky_stream() -> None:
     tests = {
         10: [
