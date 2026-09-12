@@ -6,10 +6,7 @@ from threading import Lock, Thread
 from uuid import uuid4
 
 from app.db.session import SessionLocal
-from app.importer.service import ImportProgress, ImportResult, PlaylistImporter
-
-
-_TERMINAL_STATUSES = {"completed", "failed"}
+from app.importer.service import ImportResult, PlaylistImporter
 
 
 @dataclass(slots=True)
@@ -83,10 +80,7 @@ def serialize_import_job(job: ImportJob) -> dict[str, object]:
             "error_type": job.error_type,
             "error": job.error,
         }
-        if job.result is not None:
-            payload["result"] = _result_payload(job.result)
-        else:
-            payload["result"] = None
+        payload["result"] = _result_payload(job.result) if job.result is not None else None
         return payload
 
 
@@ -96,10 +90,11 @@ def _run_import(
     text: str,
     source_location: str | None,
 ) -> None:
-    job.started_at = datetime.now(UTC)
-    job.status = "running"
-    job.stage = "starting"
-    job.message = "Starting playlist import"
+    with job.lock:
+        job.started_at = datetime.now(UTC)
+        job.status = "running"
+        job.stage = "starting"
+        job.message = "Starting playlist import"
 
     def progress(stage: str, current: int, total: int, message: str) -> None:
         _set_progress(job, stage, current, total, message)
@@ -148,13 +143,3 @@ def start_import_job(
         name=f"playlist-import-{job.id[:8]}",
     ).start()
     return job
-
-
-__all__ = [
-    "ImportJob",
-    "_TERMINAL_STATUSES",
-    "create_import_job",
-    "get_import_job",
-    "serialize_import_job",
-    "start_import_job",
-]
