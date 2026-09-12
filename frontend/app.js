@@ -325,6 +325,28 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 }
 
+window.addEventListener("iptv:datachange", async (event) => {
+  const importedPlaylistId = event.detail?.source_playlist_id;
+  if (importedPlaylistId != null) state.playlistId = Number(importedPlaylistId);
+  state.selectedId = null;
+  state.profileId = null;
+  try {
+    await loadPlaylists();
+    await loadChannels();
+    await loadProfiles();
+    renderPlaylists();
+    window.renderOverview?.();
+    if (importedPlaylistId != null) {
+      const playlist = selectedPlaylist();
+      $("status").textContent = playlist
+        ? `Selected imported playlist · v${playlist.latest_version_number ?? "—"}`
+        : "Playlist imported successfully.";
+    }
+  } catch (error) {
+    $("status").innerHTML = `<span class="error">Unable to refresh imported playlist: ${escapeHtml(error.message)}</span>`;
+  }
+});
+
 $("refresh").addEventListener("click", async () => { await loadPlaylists(); await loadChannels(); await loadProfiles(); });
 $("playlist").addEventListener("change", async (event) => {
   state.playlistId = Number(event.target.value) || null; state.selectedId = null; state.profileId = null;
