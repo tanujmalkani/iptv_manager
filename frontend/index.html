@@ -35,7 +35,7 @@
       <button class="nav-tab" type="button" data-page="export">Export</button>
     </nav>
 
-    <section id="status" class="status" role="status">Loading playlists…</section>
+    <section id="status" class="status" role="status" aria-live="polite" hidden></section>
     <section class="playlist-summary">
       <strong id="playlist-summary">Select a source playlist</strong>
       <span id="channel-count" class="meta">0 channels</span>
@@ -58,7 +58,7 @@
           <div>
             <p class="eyebrow">Import</p>
             <h2>Bring in a playlist</h2>
-            <p class="meta">Paste an M3U playlist to create a new immutable source version.</p>
+            <p class="meta">Paste an M3U playlist or upload a local M3U file to create a new immutable source version.</p>
           </div>
         </div>
         <section class="panel import-panel">
@@ -72,6 +72,17 @@
                 <span>Source location <em>(optional)</em></span>
                 <input id="import-source-location" type="text" maxlength="2000" placeholder="https://example.com/playlist.m3u">
               </label>
+            </div>
+            <div class="import-source-picker">
+              <div>
+                <span>Load from file</span>
+                <p class="meta">Upload an .m3u, .m3u8, or .txt file. The contents will be placed into the editor before importing.</p>
+              </div>
+              <div class="import-file-actions">
+                <input id="import-file" class="sr-only" type="file" accept=".m3u,.m3u8,.txt,text/plain,application/vnd.apple.mpegurl,audio/mpegurl">
+                <button id="import-file-button" class="secondary-button" type="button">Upload M3U file</button>
+                <span id="import-file-name" class="meta">No file selected</span>
+              </div>
             </div>
             <label>
               <span>M3U content</span>
