@@ -25,6 +25,7 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-tab.active { background: #17202a; color: white; }
 
 .status, .playlist-summary, .progress { padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; background: white; border: 1px solid #e4e7ec; }
+#status:empty { display: none; }
 .playlist-summary { display: flex; justify-content: space-between; gap: 12px; }
 .progress { margin-bottom: 16px; }
 .progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
@@ -48,6 +49,11 @@ h1, h2, h3, p { margin-top: 0; }
 .form-grid label > span, .import-form > label > span, .export-control-grid label > span { font-size: 13px; font-weight: 600; }
 .form-grid em { font-weight: 400; font-style: normal; color: #98a2b3; }
 .import-form { padding: 16px; display: grid; gap: 14px; }
+.import-source-picker { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; border: 1px dashed #d0d5dd; border-radius: 10px; background: #f8fafc; }
+.import-source-picker > div:first-child > span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.import-source-picker p { margin-bottom: 0; }
+.import-file-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
+.import-file-actions .meta { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .form-actions, .test-action-row, .export-preview-actions, .export-control-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .import-result { margin: 0 16px 16px; padding: 14px; border: 1px solid #e4e7ec; border-radius: 10px; background: #f8fafc; }
 .import-result-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
@@ -159,78 +165,43 @@ h1, h2, h3, p { margin-top: 0; }
   .export-preview-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .export-control-grid { grid-template-columns: 1fr 1fr; }
   .export-control-actions { justify-content: flex-start; }
+  .import-source-picker { align-items: flex-start; flex-direction: column; }
+  .import-file-actions { justify-content: flex-start; }
 }
 @media (max-width: 900px) {
   .app-header { align-items: stretch; flex-direction: column; }
   .header-controls { width: 100%; }
   .header-field { flex: 1; }
-  .header-field select { width: 100%; }
+  .header-field select { width: 100%; min-width: 0; }
   .layout { grid-template-columns: 1fr; }
-  .test-control-group, .testing-toolbar { align-items: stretch; flex-direction: column; }
-  .test-action-row { justify-content: stretch; }
-  .test-action-row button { flex: 1; }
-  .helper-grid, .overview-grid { grid-template-columns: 1fr; }
-  .metrics, .stream-grid, .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .export-preview .panel-title { display: block; }
-  .export-preview-actions { margin-top: 12px; }
-  .channel-list { max-height: 45vh; }
+  .stream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics, .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-grid { grid-template-columns: 1fr; }
 }
-@media (max-width: 620px) {
+@media (max-width: 650px) {
   .shell { padding: 14px; }
   .main-nav { overflow-x: auto; }
-  .nav-tab { flex: 1 0 auto; }
-  .form-grid, .export-control-grid { grid-template-columns: 1fr; }
-  .test-recommendation-list { grid-template-columns: 1fr; }
-  .playlist-summary { align-items: flex-start; flex-direction: column; gap: 4px; }
-  .hero-card, .import-result-head { align-items: stretch; flex-direction: column; }
-  .hero-card button { width: 100%; }
-  .metrics, .stream-grid, .overview-metrics, .export-preview-metrics { grid-template-columns: 1fr 1fr; }
+  .form-grid, .export-control-grid, .test-recommendation-list { grid-template-columns: 1fr; }
+  .form-actions, .testing-toolbar, .export-preview .panel-title { align-items: stretch; flex-direction: column; }
+  .form-actions, .export-preview-actions { justify-content: flex-start; }
+  .test-control-group { align-items: flex-start; flex-direction: column; }
+  .stream-grid, .metrics, .overview-metrics, .export-preview-metrics { grid-template-columns: 1fr 1fr; }
+  .page-heading { margin-top: 16px; }
 }
 
-/* Dark theme */
-[data-theme="dark"] body { background: #0f141a; color: #f2f4f7; }
-[data-theme="dark"] button { background: #e4e7ec; color: #101828; }
-[data-theme="dark"] select,
-[data-theme="dark"] input[type="search"],
-[data-theme="dark"] input[type="text"],
-[data-theme="dark"] textarea { background: #171d25; color: #f2f4f7; border-color: #344054; }
-[data-theme="dark"] .brand-mark { background: #f2f4f7; color: #101828; }
-[data-theme="dark"] .app-header p,
-[data-theme="dark"] .meta,
-[data-theme="dark"] .metric .label,
-[data-theme="dark"] .eyebrow { color: #98a2b3; }
-[data-theme="dark"] .main-nav,
-[data-theme="dark"] .status,
-[data-theme="dark"] .playlist-summary,
-[data-theme="dark"] .progress,
-[data-theme="dark"] .panel { background: #171d25; border-color: #303946; }
-[data-theme="dark"] .nav-tab { color: #98a2b3; }
-[data-theme="dark"] .nav-tab:hover { background: #1d2530; color: #f2f4f7; }
-[data-theme="dark"] .nav-tab.active { background: #f2f4f7; color: #101828; }
-[data-theme="dark"] .panel-title,
-[data-theme="dark"] .optimization-policy,
-[data-theme="dark"] .export-preview-warnings { border-color: #303946; }
-[data-theme="dark"] .secondary-button,
-[data-theme="dark"] .workflow-links button,
-[data-theme="dark"] .import-result { background: #1d2530; color: #f2f4f7; border-color: #303946; }
-[data-theme="dark"] .helper-grid { background: #303946; }
-[data-theme="dark"] .helper-grid > div { background: #171d25; }
-[data-theme="dark"] .channel { background: #171d25; color: #f2f4f7; border-color: #28313d; }
-[data-theme="dark"] .channel:hover,
-[data-theme="dark"] .channel.selected { background: #1d2530; }
-[data-theme="dark"] .metric,
-[data-theme="dark"] .stream,
-[data-theme="dark"] .optimization-candidate,
-[data-theme="dark"] .test-recommendation,
-[data-theme="dark"] .profile-row { border-color: #303946; }
-[data-theme="dark"] .badge.muted { background: #2a3340; color: #98a2b3; }
-[data-theme="dark"] .policy-items span { background: #2a3340; color: #c9d0da; }
-[data-theme="dark"] .progress-track,
-[data-theme="dark"] .score-bar { background: #303946; }
-[data-theme="dark"] .progress-bar,
-[data-theme="dark"] .score-bar > div { background: #f2f4f7; }
-[data-theme="dark"] .test-action-row button:last-child { background: #475467; color: #f2f4f7; }
-[data-theme="dark"] .empty { color: #98a2b3; }
-[data-theme="dark"] .error { color: #f97066; }
-[data-theme="dark"] .profile-row-selection,
-[data-theme="dark"] .export-ok { color: #6ce9a6; }
+body.dark { background: #101418; color: #f2f4f7; }
+body.dark .app-header p, body.dark .meta, body.dark .eyebrow { color: #98a2b3; }
+body.dark .main-nav, body.dark .panel, body.dark .status, body.dark .playlist-summary, body.dark .progress { background: #171d24; border-color: #344054; }
+body.dark select, body.dark input[type="search"], body.dark input[type="text"], body.dark textarea { background: #171d24; color: #f2f4f7; border-color: #475467; }
+body.dark .nav-tab { color: #98a2b3; }
+body.dark .nav-tab:hover { background: #202831; color: #f2f4f7; }
+body.dark .channel { background: #171d24; color: #f2f4f7; border-color: #202831; }
+body.dark .channel:hover, body.dark .channel.selected { background: #202831; }
+body.dark .stream, body.dark .metric, body.dark .optimization-candidate { border-color: #344054; }
+body.dark .profile-row, body.dark .optimization-channel { border-color: #202831; }
+body.dark .import-source-picker, body.dark .import-result, body.dark .workflow-links button { background: #202831; border-color: #475467; }
+body.dark .helper-grid, body.dark .optimization-policy, body.dark .export-preview-warnings { border-color: #344054; background: #101418; }
+body.dark .helper-grid > div { background: #171d24; }
+body.dark .policy-items span { background: #344054; color: #d0d5dd; }
+body.dark .secondary-button { background: #344054; color: #f2f4f7; }
+body.dark .error { color: #fda29b; }
