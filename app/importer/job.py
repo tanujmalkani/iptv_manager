@@ -116,7 +116,10 @@ def _run_import(
             job.message = (
                 "Existing version detected"
                 if result.identical_version
-                else f"Import complete · {result.channels} channels · {result.unique_streams} source streams"
+                else (
+                    f"Import complete · {result.channels} channels · "
+                    f"{result.unique_streams} source streams"
+                )
             )
             job.result = result
             job.completed_at = datetime.now(UTC)
