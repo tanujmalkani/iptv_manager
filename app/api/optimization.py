@@ -106,12 +106,16 @@ def get_playlist_optimization(
         )
         for stream in streams
     }
+    resolution_by_stream = {
+        stream_id: info.resolution for stream_id, info in stream_info_by_id.items()
+    }
 
     plan = build_optimization_plan(
         channels,
         tests_by_stream,
         stream_ids_by_channel,
         profile,
+        resolution_by_stream,
     )
     return OptimizationPlanResponse.from_model(
         plan,
