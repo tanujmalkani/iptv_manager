@@ -7,6 +7,7 @@ function optimizationReason(candidate, policy, isPrimary) {
     const strengths = [];
     if (policy.speed_weight >= 0.4) strengths.push("startup speed");
     if (policy.reliability_weight >= 0.4) strengths.push("reliability");
+    if (policy.resolution_weight >= 0.1) strengths.push("resolution");
     if (policy.stability_weight >= 0.1) strengths.push("stability");
     return `Selected #${candidate.stream_id} as primary: highest weighted score${strengths.length ? ` with emphasis on ${strengths.join(" and ")}` : ""}.`;
   }
@@ -93,10 +94,12 @@ function renderOptimizationPlan(plan) {
           <span>Reliability ${Math.round(policy.reliability_weight * 100)}%</span>
           <span>Speed ${Math.round(policy.speed_weight * 100)}%</span>
           <span>P95 ${Math.round(policy.p95_weight * 100)}%</span>
+          <span>Resolution ${Math.round(policy.resolution_weight * 100)}%</span>
           <span>Stability ${Math.round(policy.stability_weight * 100)}%</span>
           <span>Evidence ${Math.round(policy.evidence_weight * 100)}%</span>
           <span>Min success ${Math.round(policy.minimum_success_rate * 100)}%</span>
         </div>
+        <div class="meta optimization-help">Resolution compares the available candidate streams in each channel; a small startup advantage should not automatically beat a higher-resolution stream.</div>
         <div class="meta optimization-help">Apply Recommendations fills only channels without a selected stream, so manual selections are preserved.</div>
       </div>
       <button id="apply-optimization" type="button">Apply Recommendations</button>
@@ -111,6 +114,7 @@ function renderOptimizationPlan(plan) {
       </div>
       ${channel.candidates.length ? `<div class="optimization-candidates">${channel.candidates.map((candidate) => {
         const primary = candidate.stream_id === channel.primary_stream_id;
+        const info = candidate.stream_info || {};
         return `<div class="optimization-candidate ${primary ? "primary" : ""}">
           <div class="optimization-candidate-main">
             <strong>#${candidate.rank} · Stream ${candidate.stream_id}</strong>
@@ -118,13 +122,14 @@ function renderOptimizationPlan(plan) {
             <span class="optimization-score">${candidate.score.toFixed(1)}</span>
           </div>
           <div class="optimization-metrics">
+            <span>Resolution ${escapeHtml(info.resolution || "Unknown")}</span>
             <span>Success ${formatPercent(candidate.success_rate)}</span>
             <span>Startup ${formatMs(candidate.median_first_frame_ms)}</span>
             <span>Stability ${formatPercent(candidate.stability_rate)}</span>
             <span>Tests ${candidate.total_tests}</span>
           </div>
           <div class="optimization-components meta">
-            Reliability ${candidate.reliability_score.toFixed(1)} · Speed ${candidate.speed_score.toFixed(1)} · P95 ${candidate.p95_score.toFixed(1)} · Stability ${candidate.stability_score.toFixed(1)} · Evidence ${candidate.evidence_score.toFixed(1)}
+            Reliability ${candidate.reliability_score.toFixed(1)} · Speed ${candidate.speed_score.toFixed(1)} · P95 ${candidate.p95_score.toFixed(1)} · Resolution ${candidate.resolution_score.toFixed(1)} · Stability ${candidate.stability_score.toFixed(1)} · Evidence ${candidate.evidence_score.toFixed(1)}
           </div>
           <div class="optimization-reason">${escapeHtml(optimizationReason(candidate, policy, primary))}</div>
           <div class="optimization-action">
