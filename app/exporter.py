@@ -171,7 +171,9 @@ def preview_m3u(
         )
 
     profile_entries = {entry.channel_id: entry for entry in profile.entries} if profile else {}
-    candidate_stream_ids = all_candidate_stream_ids | {entry.stream_id for entry in selected_entries}
+    candidate_stream_ids = all_candidate_stream_ids | {
+        entry.stream_id for entry in selected_entries
+    }
     tests_by_stream = _load_tests(session, candidate_stream_ids)
     stream_info_by_id = _load_stream_info(session, candidate_stream_ids, tests_by_stream)
     optimized_count = 0
