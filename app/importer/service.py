@@ -25,7 +25,6 @@ from app.discovery.service import StreamDiscovery
 from app.discovery.url import normalize_url
 from app.m3u.parser import M3UEntry, parse_m3u
 
-
 ImportProgress = Callable[[str, int, int, str], None]
 
 
