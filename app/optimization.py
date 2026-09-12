@@ -25,32 +25,36 @@ class OptimizationPolicy:
     p95_weight: float
     stability_weight: float
     evidence_weight: float
+    resolution_weight: float
     minimum_success_rate: float
 
 
 POLICIES: dict[OptimizationProfile, OptimizationPolicy] = {
     OptimizationProfile.FAST: OptimizationPolicy(
         reliability_weight=0.20,
-        speed_weight=0.50,
+        speed_weight=0.40,
         p95_weight=0.20,
         stability_weight=0.00,
         evidence_weight=0.10,
+        resolution_weight=0.10,
         minimum_success_rate=0.50,
     ),
     OptimizationProfile.RELIABLE: OptimizationPolicy(
         reliability_weight=0.60,
-        speed_weight=0.15,
+        speed_weight=0.10,
         p95_weight=0.00,
         stability_weight=0.15,
         evidence_weight=0.10,
+        resolution_weight=0.05,
         minimum_success_rate=0.80,
     ),
     OptimizationProfile.ALL: OptimizationPolicy(
         reliability_weight=0.40,
-        speed_weight=0.30,
+        speed_weight=0.25,
         p95_weight=0.10,
         stability_weight=0.10,
         evidence_weight=0.10,
+        resolution_weight=0.05,
         minimum_success_rate=0.00,
     ),
 }
@@ -75,6 +79,7 @@ def build_channel_optimization(
     tests_by_stream: dict[int, Sequence[StreamTest]],
     stream_ids: set[int] | None = None,
     profile: OptimizationProfile = OptimizationProfile.FAST,
+    resolution_by_stream: dict[int, str | None] | None = None,
 ) -> OptimizedChannel:
     performances: list[StreamPerformance] = []
     policy = POLICIES[profile]
@@ -98,6 +103,8 @@ def build_channel_optimization(
         p95_weight=policy.p95_weight,
         stability_weight=policy.stability_weight,
         evidence_weight=policy.evidence_weight,
+        resolution_weight=policy.resolution_weight,
+        resolution_by_stream=resolution_by_stream,
     )
     primary = ranked[0].performance.stream_id if ranked else None
     return OptimizedChannel(
@@ -120,6 +127,7 @@ def build_optimization_plan(
     tests_by_stream: dict[int, Sequence[StreamTest]],
     stream_ids_by_channel: dict[int, set[int]] | None = None,
     profile: OptimizationProfile = OptimizationProfile.FAST,
+    resolution_by_stream: dict[int, str | None] | None = None,
 ) -> OptimizationPlan:
     return OptimizationPlan(
         profile=profile,
@@ -131,6 +139,7 @@ def build_optimization_plan(
                 if stream_ids_by_channel is None
                 else stream_ids_by_channel.get(channel.id, set()),
                 profile,
+                resolution_by_stream,
             )
             for channel in channels
         ),
