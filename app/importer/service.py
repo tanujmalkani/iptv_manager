@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
@@ -83,7 +83,13 @@ class PlaylistImporter:
             )
         )
         if existing is not None:
-            self._report(progress, "complete", len(playlist.entries), len(playlist.entries), "Existing version detected")
+            self._report(
+                progress,
+                "complete",
+                len(playlist.entries),
+                len(playlist.entries),
+                "Existing version detected",
+            )
             return ImportResult(
                 source_playlist_id=source.id,
                 version_id=existing.id,
@@ -163,7 +169,8 @@ class PlaylistImporter:
             "complete",
             result.entries,
             result.entries,
-            f"Import complete · {result.channels} channels · {result.unique_streams} source streams",
+            f"Import complete · {result.channels} channels · "
+            f"{result.unique_streams} source streams",
         )
         return result
 
