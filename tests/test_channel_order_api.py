@@ -5,7 +5,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.db.models import Base, Channel, ChannelStream, PlaylistEntry, SourcePlaylist, SourcePlaylistVersion, Stream, StreamTest, TestRun
+from app.db.models import (
+    Base,
+    Channel,
+    ChannelStream,
+    PlaylistEntry,
+    SourcePlaylist,
+    SourcePlaylistVersion,
+    Stream,
+    StreamTest,
+    TestRun,
+)
 from app.db.session import get_db
 from app.main import app
 
