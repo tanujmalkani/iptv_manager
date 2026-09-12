@@ -59,25 +59,32 @@
     const fileInput = document.createElement("input");
     fileInput.id = "import-file";
     fileInput.type = "file";
-    fileInput.accept = ".m3u,.m3u8,.txt";
-    fileInput.style.position = "absolute";
-    fileInput.style.width = "1px";
-    fileInput.style.height = "1px";
-    fileInput.style.opacity = "0";
-    fileInput.style.pointerEvents = "none";
+    fileInput.accept = ".m3u,.m3u8,.txt,text/plain,application/vnd.apple.mpegurl,audio/mpegurl";
+    fileInput.className = "sr-only";
 
-    const button = document.createElement("label");
+    const button = document.createElement("button");
+    button.id = "import-file-button";
+    button.type = "button";
     button.className = "secondary-button";
-    button.htmlFor = "import-file";
-    button.textContent = "Choose M3U file";
-    button.style.cursor = "pointer";
+    button.textContent = "Upload M3U file";
+    button.addEventListener("click", () => fileInput.click());
 
-    actions.append(fileName, button, fileInput);
+    actions.append(button, fileName, fileInput);
     picker.append(description, actions);
     contentLabel.parentNode.insertBefore(picker, contentLabel);
   }
 
+  function bindFilePicker() {
+    const button = $("import-file-button");
+    const input = $("import-file");
+    if (!button || !input) return;
+    button.addEventListener("click", () => {
+      input.click();
+    });
+  }
+
   ensureFilePicker();
+  bindFilePicker();
 
   $("import-file")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
