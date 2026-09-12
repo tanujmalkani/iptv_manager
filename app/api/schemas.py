@@ -18,6 +18,8 @@ from app.performance.stream_info import StreamTechnicalInfo
 
 
 class StreamTechnicalInfoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     stream_id: int
     stream_kind: str
     protocol: str | None
@@ -276,7 +278,7 @@ class OptimizationChannelResponse(BaseModel):
         candidates = [
             OptimizationCandidateResponse.from_model(
                 candidate,
-                stream_info_by_id[candidate.stream_id],
+                stream_info_by_id[candidate.performance.stream_id],
             )
             for candidate in item.candidates
         ]
