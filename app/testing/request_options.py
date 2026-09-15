@@ -5,9 +5,9 @@ import subprocess
 import threading
 import time
 from collections.abc import Mapping
-from urllib.parse import unquote
 
 from app.db.models.enums import ErrorType, TestResult
+from app.discovery.url import http_headers_from_options, split_stream_reference
 from app.testing.quick import (
     QuickTestEngine,
     QuickTestResult,
@@ -17,53 +17,9 @@ from app.testing.quick import (
 )
 from app.testing.stream import StreamTestEngine
 
-_OPTION_SEPARATOR_RE = re.compile(r"(?:\||%7c)", re.IGNORECASE)
-_OPTION_VALUE_RE = re.compile(
-    r"(?:^|(?:\||%7c))([A-Za-z0-9_-]+)=(.*?)(?=(?:\||%7c|&(?:Referer|Referrer|User-Agent|Cookie|Origin|Authorization|Accept|Icy-MetaData)=)|$)",
-    re.IGNORECASE,
-)
 _VIDEO_CODEC_RE = re.compile(r"Video:\s*([^,\s]+)")
 _RESOLUTION_RE = re.compile(r"\bs:\s*(\d+)x(\d+)")
 _PTS_RE = re.compile(r"\bpts_time:\s*([0-9.]+)")
-
-_HEADER_NAMES = {
-    "referer": "Referer",
-    "referrer": "Referer",
-    "user-agent": "User-Agent",
-    "cookie": "Cookie",
-    "origin": "Origin",
-    "authorization": "Authorization",
-    "accept": "Accept",
-    "icy-metadata": "Icy-MetaData",
-}
-
-
-def split_stream_reference(reference: str) -> tuple[str, dict[str, str]]:
-    """Split a Kodi-style URL|option=value stream reference into URL and options."""
-    value = reference.strip()
-    separator = _OPTION_SEPARATOR_RE.search(value)
-    if separator is None:
-        return value, {}
-
-    base_url = value[: separator.start()]
-    option_text = value[separator.end() :]
-    options: dict[str, str] = {}
-    for match in _OPTION_VALUE_RE.finditer(option_text):
-        key = match.group(1).strip()
-        option_value = unquote(match.group(2).strip())
-        if key:
-            options[key] = option_value
-    return base_url, options
-
-
-def http_headers_from_options(options: Mapping[str, str]) -> dict[str, str]:
-    """Return HTTP header options supported by Kodi-style stream references."""
-    return {
-        header_name: value
-        for key, value in options.items()
-        if (header_name := _HEADER_NAMES.get(key.casefold())) is not None
-        and value
-    }
 
 
 def ffmpeg_headers_arg(headers: Mapping[str, str]) -> str:
