@@ -130,7 +130,10 @@ class StreamDiscovery:
                 )
             with response_context as response:
                 final_base_url = normalize_url(str(response.url))
-                final_url = format_stream_reference(final_base_url, self._options_from_headers(headers))
+                final_url = format_stream_reference(
+                    final_base_url,
+                    self._options_from_headers(headers),
+                )
                 content_type = response.headers.get("content-type")
                 kind = classify_response(final_base_url, content_type, b"")
 
