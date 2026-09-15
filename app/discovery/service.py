@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import AbstractContextManager
 from typing import Protocol
 
@@ -10,7 +10,12 @@ from app.db.models.enums import StreamKind
 from app.discovery.classifier import classify_response
 from app.discovery.hls import parse_master_playlist
 from app.discovery.models import DiscoveryResult, VariantMetadata
-from app.discovery.url import normalize_url
+from app.discovery.url import (
+    format_stream_reference,
+    http_headers_from_options,
+    normalize_url,
+    split_stream_reference,
+)
 
 
 class _ResponseContext(AbstractContextManager[httpx.Response], Protocol):
@@ -19,7 +24,12 @@ class _ResponseContext(AbstractContextManager[httpx.Response], Protocol):
 
 class _Client(Protocol):
     def stream(
-        self, method: str, url: str, *, follow_redirects: bool = True
+        self,
+        method: str,
+        url: str,
+        *,
+        follow_redirects: bool = True,
+        headers: Mapping[str, str] | None = None,
     ) -> _ResponseContext: ...
 
     def close(self) -> None: ...
@@ -58,15 +68,18 @@ class StreamDiscovery:
             self._client = None
 
     def discover(self, root_url: str) -> list[DiscoveryResult]:
-        """Discover the root and all recursively referenced HLS variants."""
+        """Discover the root and recursively referenced HLS variants with inherited headers."""
         if self._client is None:
             with self:
                 return self.discover(root_url)
 
+        root_base_url, request_options = split_stream_reference(root_url)
+        headers = http_headers_from_options(request_options)
+        root_reference = format_stream_reference(normalize_url(root_base_url), request_options)
         results: list[DiscoveryResult] = []
         visited: set[str] = set()
         pending: list[tuple[str, str | None, int, VariantMetadata | None]] = [
-            (normalize_url(root_url), None, 0, None)
+            (root_reference, None, 0, None)
         ]
 
         while pending and len(results) < self.max_streams:
@@ -76,15 +89,23 @@ class StreamDiscovery:
                 continue
             visited.add(normalized)
 
-            result, children = self._inspect(normalized, parent_url, depth, variant_metadata)
-            result.children = [normalize_url(child.url) for child in children]
+            result, children = self._inspect(url, parent_url, depth, variant_metadata, headers)
+            result.children = [
+                format_stream_reference(child.url, request_options) for child in children
+            ]
             results.append(result)
 
             if result.kind == StreamKind.MASTER_PLAYLIST and depth < self.max_depth:
                 for child in children:
-                    if normalize_url(child.url) not in visited:
+                    child_reference = format_stream_reference(child.url, request_options)
+                    if normalize_url(child_reference) not in visited:
                         pending.append(
-                            (child.url, result.final_url, depth + 1, child.variant_metadata)
+                            (
+                                child_reference,
+                                result.final_url,
+                                depth + 1,
+                                child.variant_metadata,
+                            )
                         )
 
         return results
@@ -95,12 +116,23 @@ class StreamDiscovery:
         parent_url: str | None,
         depth: int,
         variant_metadata: VariantMetadata | None,
+        headers: Mapping[str, str],
     ) -> tuple[DiscoveryResult, list[_Child]]:
+        base_url, _ = split_stream_reference(url)
         try:
-            with self._client.stream("GET", url, follow_redirects=True) as response:
-                final_url = normalize_url(str(response.url))
+            try:
+                response_context = self._client.stream(
+                    "GET", base_url, follow_redirects=True, headers=headers
+                )
+            except TypeError:
+                response_context = self._client.stream(
+                    "GET", base_url, follow_redirects=True
+                )
+            with response_context as response:
+                final_base_url = normalize_url(str(response.url))
+                final_url = format_stream_reference(final_base_url, self._options_from_headers(headers))
                 content_type = response.headers.get("content-type")
-                kind = classify_response(final_url, content_type, b"")
+                kind = classify_response(final_base_url, content_type, b"")
 
                 if kind == StreamKind.MEDIA_STREAM:
                     return (
@@ -123,7 +155,7 @@ class StreamDiscovery:
                     )
 
                 body = self._read_limited(response)
-                kind = classify_response(final_url, content_type, body)
+                kind = classify_response(final_base_url, content_type, body)
         except httpx.TimeoutException as exc:
             return (
                 DiscoveryResult(
@@ -189,7 +221,7 @@ class StreamDiscovery:
             text = body.decode("utf-8-sig", errors="replace")
             children = [
                 _Child(url=item.url, variant_metadata=item.metadata)
-                for item in parse_master_playlist(text, final_url)
+                for item in parse_master_playlist(text, final_base_url)
             ]
 
         return (
@@ -205,6 +237,10 @@ class StreamDiscovery:
             ),
             children,
         )
+
+    @staticmethod
+    def _options_from_headers(headers: Mapping[str, str]) -> dict[str, str]:
+        return {key: value for key, value in headers.items() if value}
 
     def _read_limited(self, response: httpx.Response) -> bytes:
         chunks: list[bytes] = []
