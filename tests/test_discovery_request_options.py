@@ -1,11 +1,17 @@
+import httpx
+
 from app.db.models.enums import StreamKind
 from app.discovery.service import StreamDiscovery
 from app.discovery.url import http_headers_from_options
-import httpx
 
 
 class FakeResponse:
-    def __init__(self, url: str, content: bytes, content_type: str = "application/vnd.apple.mpegurl") -> None:
+    def __init__(
+        self,
+        url: str,
+        content: bytes,
+        content_type: str = "application/vnd.apple.mpegurl",
+    ) -> None:
         self.url = httpx.URL(url)
         self.status_code = 200
         self.headers = {"content-type": content_type}
@@ -61,17 +67,16 @@ def test_master_request_headers_propagate_to_children() -> None:
         }
     )
 
+    options = {"Referer": "https://www.zeebiz.com/", "User-Agent": "Kodi"}
     reference = root + "|Referer=https://www.zeebiz.com/&User-Agent=Kodi"
     with StreamDiscovery(client=client) as discovery:
         results = discovery.discover(reference)
 
+    expected_headers = http_headers_from_options(options)
     assert [result.kind for result in results] == [
         StreamKind.MASTER_PLAYLIST,
         StreamKind.MEDIA_PLAYLIST,
     ]
-    assert client.calls == [
-        (root, http_headers_from_options({"Referer": "https://www.zeebiz.com/", "User-Agent": "Kodi"})),
-        (child, http_headers_from_options({"Referer": "https://www.zeebiz.com/", "User-Agent": "Kodi"})),
-    ]
+    assert client.calls == [(root, expected_headers), (child, expected_headers)]
     assert results[0].final_url.endswith("|Referer=https://www.zeebiz.com/&User-Agent=Kodi")
     assert results[1].final_url.endswith("|Referer=https://www.zeebiz.com/&User-Agent=Kodi")
