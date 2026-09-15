@@ -9,7 +9,8 @@ from app.testing.request_options import (
 
 def test_split_stream_reference_supports_encoded_kodi_pipe() -> None:
     url, options = split_stream_reference(
-        "https://dwby15d04agvq.cloudfront.net/index_5.m3u8%7CReferer=https://www.zeebiz.com/"
+        "https://dwby15d04agvq.cloudfront.net/index_5.m3u8"
+        "%7CReferer=https://www.zeebiz.com/"
     )
 
     assert url == "https://dwby15d04agvq.cloudfront.net/index_5.m3u8"
@@ -18,7 +19,8 @@ def test_split_stream_reference_supports_encoded_kodi_pipe() -> None:
 
 def test_request_options_support_multiple_http_headers() -> None:
     url, options = split_stream_reference(
-        "https://example.test/live.m3u8|Referer=https://example.test/&User-Agent=Kodi"
+        "https://example.test/live.m3u8"
+        "|Referer=https://example.test/&User-Agent=Kodi"
     )
 
     assert url == "https://example.test/live.m3u8"
