@@ -38,6 +38,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "DTZ"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/testing/quick.py" = ["E501"]
+"app/testing/request_options.py" = ["E501"]
 "app/testing/stream.py" = ["E501"]
 
 [tool.pytest.ini_options]
