@@ -22,6 +22,9 @@ _OPTION_VALUE_RE = re.compile(
     r"(?:^|(?:\\||%7c))([A-Za-z0-9_-]+)=(.*?)(?=(?:\\||%7c|&(?:Referer|Referrer|User-Agent|Cookie|Origin|Authorization|Accept|Icy-MetaData)=)|$)",
     re.IGNORECASE,
 )
+_VIDEO_CODEC_RE = re.compile(r"Video:\s*([^,\s]+)")
+_RESOLUTION_RE = re.compile(r"\bs:\s*(\d+)x(\d+)")
+_PTS_RE = re.compile(r"\bpts_time:\s*([0-9.]+)")
 
 _HEADER_NAMES = {
     "referer": "Referer",
@@ -73,31 +76,19 @@ class KodiAwareQuickTestEngine(QuickTestEngine):
 
     def test(self, url: str) -> QuickTestResult:
         base_url, options = split_stream_reference(url)
-        if not options:
-            return super().test(url)
-        result = super().test(base_url)
-        result.extra_metrics["request_options"] = options
-        headers = http_headers_from_options(options)
-        if headers:
-            first_frame_ms, error = self._test_first_frame_with_headers(
-                base_url,
-                self.timeout_seconds,
-                headers,
-            )
-            result.first_frame_ms = first_frame_ms
-            if first_frame_ms is not None:
-                result.result = TestResult.SUCCESS
-                result.available = True
-                result.error_stage = None
-                result.error_type = None
-                result.error_message = None
+        result = super().test(url)
+        if options:
+            result.extra_metrics["request_options"] = options
+            headers = http_headers_from_options(options)
+            if headers:
+                result.extra_metrics["request_headers"] = headers
             else:
-                result.result = TestResult.FAILED
-                result.available = False
-                result.error_stage = "decoder"
-                result.error_type = error[0]
-                result.error_message = error[1]
+                result.extra_metrics["request_headers"] = {}
         return result
+
+    def _test_http(self, url: str, timeout_seconds: float):
+        base_url, _ = split_stream_reference(url)
+        return super()._test_http(base_url, timeout_seconds)
 
     def _test_first_frame(
         self,
@@ -197,11 +188,15 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
 
     def test(self, url: str) -> QuickTestResult:
         base_url, options = split_stream_reference(url)
-        if not options:
-            return super().test(url)
-        result = super().test(base_url)
-        result.extra_metrics["request_options"] = options
+        result = super().test(url)
+        if options:
+            result.extra_metrics["request_options"] = options
+            result.extra_metrics["request_headers"] = http_headers_from_options(options)
         return result
+
+    def _test_http(self, url: str, timeout_seconds: float):
+        base_url, _ = split_stream_reference(url)
+        return super()._test_http(base_url, timeout_seconds)
 
     def _test_playback(self, url: str) -> dict[str, object]:
         base_url, options = split_stream_reference(url)
@@ -266,6 +261,12 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
         first_frame_event = threading.Event()
         stderr_done = threading.Event()
         reader_done = threading.Event()
+        first_pts: float | None = None
+        last_pts: float | None = None
+        decoded_frames = 0
+        resolution: str | None = None
+        codec: str | None = None
+        audio_present = False
 
         def drain_media() -> None:
             nonlocal media_bytes, media_bytes_after_first_frame
@@ -282,16 +283,37 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
                 reader_done.set()
 
         def read_stderr() -> None:
-            nonlocal playback_started
+            nonlocal playback_started, first_pts, last_pts
+            nonlocal decoded_frames, resolution, codec, audio_present
             try:
                 for raw_line in process.stderr:
                     line = raw_line.decode("utf-8", errors="replace")
                     with stderr_lock:
                         if len(stderr_lines) < 30:
                             stderr_lines.append(line.strip())
+
+                    if codec is None:
+                        match = _VIDEO_CODEC_RE.search(line)
+                        if match:
+                            codec = match.group(1)
+                    if "Audio:" in line:
+                        audio_present = True
+                    if resolution is None:
+                        match = _RESOLUTION_RE.search(line)
+                        if match:
+                            resolution = f"{match.group(1)}x{match.group(2)}"
+
                     if _SHOWINFO_FRAME_RE.search(line):
-                        playback_started = time.monotonic()
-                        first_frame_event.set()
+                        decoded_frames += 1
+                        pts_match = _PTS_RE.search(line)
+                        if pts_match:
+                            pts = float(pts_match.group(1))
+                            if first_pts is None:
+                                first_pts = pts
+                            last_pts = pts
+                        if first_frame_event.is_set() is False:
+                            playback_started = time.monotonic()
+                            first_frame_event.set()
             finally:
                 stderr_done.set()
 
@@ -305,13 +327,6 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
         stderr_reader.start()
 
         first_frame_ms: float | None = None
-        first_pts: float | None = None
-        last_pts: float | None = None
-        decoded_frames = 0
-        resolution: str | None = None
-        codec: str | None = None
-        audio_present = False
-
         deadline = started + self.timeout_seconds
         while first_frame_event.wait(timeout=0.01) is False:
             if process.poll() is not None or stderr_done.is_set() or time.monotonic() >= deadline:
@@ -342,12 +357,11 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
         with bytes_lock:
             measured_bytes = media_bytes_after_first_frame
             total_media_bytes = media_bytes
-
         with stderr_lock:
             stderr = " ".join(line for line in stderr_lines if line)
 
-        lower_stderr = stderr.lower()
         if first_frame_ms is None:
+            lower_stderr = stderr.lower()
             if "allowed_segment_extensions" in lower_stderr or "extension_picky" in lower_stderr:
                 error_type = ErrorType.INVALID_MANIFEST
             elif "unknown decoder" in lower_stderr or (
@@ -363,7 +377,7 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
             return {
                 "first_frame_ms": None,
                 "playback_duration_ms": playback_duration_ms,
-                "decoded_frames": 0,
+                "decoded_frames": decoded_frames,
                 "resolution": resolution,
                 "observed_fps": None,
                 "codec": codec,
@@ -376,6 +390,11 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
             }
 
         stable = playback_duration_ms >= self.playback_duration_seconds * 1000.0 * 0.95
+        observed_fps = (
+            (decoded_frames - 1) / (last_pts - first_pts)
+            if first_pts is not None and last_pts is not None and last_pts > first_pts
+            else None
+        )
         throughput_bps = (
             measured_bytes * 8 / (playback_duration_ms / 1000.0)
             if playback_duration_ms > 0 and measured_bytes > 0
@@ -386,13 +405,13 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
             "playback_duration_ms": playback_duration_ms,
             "decoded_frames": decoded_frames,
             "resolution": resolution,
-            "observed_fps": None,
+            "observed_fps": observed_fps,
             "codec": codec,
             "audio_present": audio_present,
             "stable": stable,
             "media_bytes": total_media_bytes,
             "throughput_bps": throughput_bps,
-            "error_type": ErrorType.UNKNOWN,
+            "error_type": ErrorType.UNKNOWN if stable else ErrorType.MEDIA_TIMEOUT,
             "error_message": None if stable else "Stream ended before the requested sustained playback duration.",
         }
 
