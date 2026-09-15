@@ -35,7 +35,7 @@ def split_stream_reference(reference: str) -> tuple[str, dict[str, str]]:
         key = option_match.group(1)
         value_start = option_match.end()
         value_end = matches[index + 1].start() if index + 1 < len(matches) else len(option_text)
-        option_value = unquote(option_text[value_start:value_end].lstrip("&|").strip())
+        option_value = unquote(option_text[value_start:value_end].strip("&|").strip())
         options[key] = option_value
     return base_url, options
 
