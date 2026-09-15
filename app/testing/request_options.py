@@ -9,10 +9,10 @@ from collections.abc import Mapping
 from app.db.models.enums import ErrorType
 from app.discovery.url import http_headers_from_options, split_stream_reference
 from app.testing.quick import (
-    QuickTestEngine,
-    QuickTestResult,
     _FFMPEG_PLAYBACK_OPTIONS,
     _SHOWINFO_FRAME_RE,
+    QuickTestEngine,
+    QuickTestResult,
     _elapsed_ms,
 )
 from app.testing.stream import StreamTestEngine
