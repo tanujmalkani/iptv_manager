@@ -75,15 +75,11 @@ class KodiAwareQuickTestEngine(QuickTestEngine):
     """Quick tester that understands Kodi-style request options appended to URLs."""
 
     def test(self, url: str) -> QuickTestResult:
-        base_url, options = split_stream_reference(url)
+        _, options = split_stream_reference(url)
         result = super().test(url)
         if options:
             result.extra_metrics["request_options"] = options
-            headers = http_headers_from_options(options)
-            if headers:
-                result.extra_metrics["request_headers"] = headers
-            else:
-                result.extra_metrics["request_headers"] = {}
+            result.extra_metrics["request_headers"] = http_headers_from_options(options)
         return result
 
     def _test_http(self, url: str, timeout_seconds: float):
@@ -187,7 +183,7 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
     """Deep tester that passes Kodi-style HTTP headers to sustained FFmpeg playback."""
 
     def test(self, url: str) -> QuickTestResult:
-        base_url, options = split_stream_reference(url)
+        _, options = split_stream_reference(url)
         result = super().test(url)
         if options:
             result.extra_metrics["request_options"] = options
@@ -291,7 +287,6 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
                     with stderr_lock:
                         if len(stderr_lines) < 30:
                             stderr_lines.append(line.strip())
-
                     if codec is None:
                         match = _VIDEO_CODEC_RE.search(line)
                         if match:
@@ -302,7 +297,6 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
                         match = _RESOLUTION_RE.search(line)
                         if match:
                             resolution = f"{match.group(1)}x{match.group(2)}"
-
                     if _SHOWINFO_FRAME_RE.search(line):
                         decoded_frames += 1
                         pts_match = _PTS_RE.search(line)
@@ -311,7 +305,7 @@ class KodiAwareStreamTestEngine(StreamTestEngine):
                             if first_pts is None:
                                 first_pts = pts
                             last_pts = pts
-                        if first_frame_event.is_set() is False:
+                        if not first_frame_event.is_set():
                             playback_started = time.monotonic()
                             first_frame_event.set()
             finally:
