@@ -17,9 +17,9 @@ from app.testing.quick import (
 )
 from app.testing.stream import StreamTestEngine
 
-_OPTION_SEPARATOR_RE = re.compile(r"(?:\\||%7c)", re.IGNORECASE)
+_OPTION_SEPARATOR_RE = re.compile(r"(?:\||%7c)", re.IGNORECASE)
 _OPTION_VALUE_RE = re.compile(
-    r"(?:^|(?:\\||%7c))([A-Za-z0-9_-]+)=(.*?)(?=(?:\\||%7c|&(?:Referer|Referrer|User-Agent|Cookie|Origin|Authorization|Accept|Icy-MetaData)=)|$)",
+    r"(?:^|(?:\||%7c))([A-Za-z0-9_-]+)=(.*?)(?=(?:\||%7c|&(?:Referer|Referrer|User-Agent|Cookie|Origin|Authorization|Accept|Icy-MetaData)=)|$)",
     re.IGNORECASE,
 )
 _VIDEO_CODEC_RE = re.compile(r"Video:\s*([^,\s]+)")
