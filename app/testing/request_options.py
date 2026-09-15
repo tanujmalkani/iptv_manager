@@ -6,7 +6,7 @@ import threading
 import time
 from collections.abc import Mapping
 
-from app.db.models.enums import ErrorType, TestResult
+from app.db.models.enums import ErrorType
 from app.discovery.url import http_headers_from_options, split_stream_reference
 from app.testing.quick import (
     QuickTestEngine,
